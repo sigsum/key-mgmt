@@ -1,0 +1,50 @@
+#!/bin/bash
+
+USER=$(whoami) # to fix group permissions after inserting YubiHSMs
+WRAP_FILE_LOG=logsrv.wrapped # only used temporarily, no long-term storage
+WRAP_FILE_WITNESS=witness.wrapped # only used temporarily, no long-term storage
+
+trap clean_up EXIT
+
+pid=""
+function clean_up() {
+	kill "$pid" >/dev/null 2>&1
+	shred -zun 12 "$WRAP_FILE_LOG" >/dev/null 2>&1
+	shred -zun 12 "$WRAP_FILE_WITNESS" >/dev/null 2>&1
+}
+
+function info() {
+	echo "*** $*" >&2
+}
+
+function die() {
+	echo "ERROR: $*" >&2
+	exit 1
+}
+
+function yubihsm_init() {
+	info "INSERT YubiHSM, purpose: $1"
+	read -rp "ENTER to continue"
+
+	id="$(lsusb | grep YubiHSM | cut -d' ' -f6)"
+	[[ -n "$id" ]] || die "failed to locate YubiHSM, is it plugged in?"
+
+	info "FOUND YubiHSM, id $id"
+	info "INSER again and TOUCH for 10s to reset"
+	read -rp "ENTER to continue"
+
+	dev="/dev/bus/usb/$(lsusb | grep YubiHSM | cut -d' ' -f2,4 | tr ' ' '/' | sed 's/://g')"
+	sudo chgrp "$USER" "$dev"
+
+	yubihsm-connector >/dev/null 2>&1 &
+	pid=$!
+}
+
+function yubihsm_get_passphrase() {
+	yubihsm-shell << EOF
+connect
+session open   "$1" "$2"
+get     random   0   32
+session close    0
+EOF
+}
