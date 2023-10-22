@@ -1,0 +1,32 @@
+$ ./test-ssh-agent
+*** INSERT YubiHSM, purpose: test
+ENTER to continue
+*** FOUND YubiHSM, id 1050:0030
+*** INSER again and TOUCH for 10s to reset
+ENTER to continue
+Using default connector URL: http://localhost:12345
+Session keepalive set up to run every 15 seconds
+Created session 0
+Generated Asymmetric key 0x0009
+Generated Asymmetric key 0x000a
+Stored Authentication key 0x0002
+Found 3 object(s)
+id: 0x0002, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Logsrv auth
+id: 0x0009, type: asymmetric-key, algo: ecp256, sequence: 0, label: Logsrv key p256
+id: 0x000a, type: asymmetric-key, algo: ed25519, sequence: 0, label: Logsrv key ed25519
+
+*** Use YubiHSM password 0002aaaabbbbcccc
+*** See yubihsm_pkcs11_debug.txt for logs
+*** List keys with ssh-keygen
+Enter PIN for 'YubiHSM':
+skipping unsupported key type
+failed to fetch key
+ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBBDohQDhAPIwsF4Qd4mrgraJD82HTlKkjIXaMPpEsXiYhTOBHVLqQaGF8YheslMD67D2Z3cjS6RFCv5LbAaDdDk= Logsrv key p256
+*** Start SSH agent
+Agent pid 67552
+*** Add keys
+Enter passphrase for PKCS#11:
+Card added: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so
+*** List keys
+256 SHA256:ogq9Y7FslPiJ+XPyf6p807eYk3J94VADgMgVuvrNm1Y Logsrv key p256 (ECDSA)
+ENTER to delete yubihsm_pkcs11_debug.txt, ctrl+C to exit

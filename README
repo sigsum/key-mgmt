@@ -4,3 +4,5 @@ Work in progress, repo may be moved and subsequently deleted.
 
 See DEMO.txt for an example where 5 YubiHSMs are provisioned to get two backups,
 two signing-oracles for a log server, and one signing oracle for a witness.
+
+See FAIL.txt for PKCS11 Ed25519 + ssh-agent that's not working; p256 works tho.
