@@ -19,7 +19,7 @@ read the [getting started guide][], as it shows some interactive example usage.
 The overall objectives are:
 
   1. Signing requires access to a localhost-only YubiHSM and a 128-bit secret
-     generated while the device was (re)provisioned.  This _signing oracle
+     generated while the device was (re)provisioned.  This _signing-oracle
      YubiHSM_ is plugged into a networked node at all times (i.e., a primary log
      server, a secondary log server, or a witness), but is only usable as a
      signing oracle if a YubiHSM authentication passphrase is made available.
@@ -38,18 +38,24 @@ stolen or remotely accessible as a result of a networked node getting owned.
 Examples of failures include a device that breaks.  We tolerate `n-1` failures,
 with `n` set to `2` for backup YubiHSMs and `3` for USB sticks with passphrases.
 
+Randomness produced by a YubiHSM is assumed to be good, so that the generated
+keys and passphrases are computationally hard to brute force (128-bit security).
+
 For key recovery, the attacker needs to gain access to a backup YubiHSM and its
-secret passphrases.  This is assumed to be hard: two physical security
+secret passphrase.  This is assumed to be hard: two different physical security
 boundaries need to be breached at the same time for the attacker to succeed.
 
-For signing oracle access, a (local) attacker can steal a node's YubiHSM and
-breach another physical security perimeter to gain access to its passphrases.
+For signing-oracle access, a (local) attacker can steal a node's YubiHSM and
+breach another physical security perimeter to gain access to its passphrase.
 This, too, is assumed to be hard.
 
-For signing oracle access, a (remote) attacker may gain root access on an active
+For signing-oracle access, a (remote) attacker may gain root access on an active
 node, or in the case of non-root access learn the secret passphrase by breaching
 a physical security perimeter that stores it.  This may be the most likely
 attack scenario.  It is also hard to detect if no physical boundary is breached.
+
+Note how log servers have a larger (remote) attack surface than witnesses,
+simply because witnesses can be operated from less public vantage points.
 
 For physical security and detection of breaches we rely on locks, alarms, safes,
 tamper-evident bags, etc.  Detection of a breach is generally assumed to be
@@ -83,8 +89,8 @@ confirm with the others that they currently have and still get the same table.
 | YYYY-MM-DD | Charlie's home   | USB-3  | CCC           | Initial provisioning     |
 | YYYY-MM-DD | Alice's home     | USB-1  | DDD           | Promote logsrv secondary |
 
-If a tamper-evident bag has been breached or stolen, all secret passphrases must
-be changed as soon as possible.  This involves all backup and signing YubiHSMs.
+If a tamper-evident bag is breached or stolen, all secret passphrases must be
+changed immediately.  This involves all backup and signing-oracle YubiHSMs.
 
 If a USB thumb drive is plugged into a system that is not a dedicated
 provisioning machine (introduced below), it should be considered compromised.
@@ -110,39 +116,46 @@ We have `n = 2` backup YubiHSMs that are complete replicates of each other:
 
 (Storing the two signing keys in different domains is not necessary when each
 networked node gets its own YubiHSM.  Such a setup makes it easier to change
-this in the future though, i.e., if a signing oracle YubiHSM becomes shared.)
+this in the future though, i.e., if a signing-oracle YubiHSM becomes shared.)
 
 These four objects are generated on an initial YubiHSM, then exported and
 imported under wrap to the other backup.  The secret passphrases associated with
-`authkey` and `wrapkey` are stored on USB thumb drives as described above.
+`authkey` and `wrapkey` are stored on 3x USB thumb drives as described above.
 
 All of this takes place on a dedicated provisioning machine without network, to
 avoid that the wrapped key material ever touches a networked node.  In other
 words, always do the (wrapped) YubiHSM exporting and importing on this
 provisioning machine.  Store it with the most accessible backup YubiHSM.
 
-Store the two backup YubiHSMs in tamper-evident bags on different secure
-locations.  Use the same procedure to track locations and serial numbers as for
-USB sticks.  We discourage `n < 2` to get a reasonable level of reliability.
+Store backup YubiHSMs in tamper-evident bags on different secure locations.  Use
+the same procedure to track locations and serial numbers as for USB thumb
+drives.  We discourage `n < 2` to get a reasonable level of reliability.
+
+If it is detected that a backup YubiHSM is breached (e.g., it is lost or somehow
+broken), reprovision so that there is a new set of `n = 2` backup YubiHSMs.  Use
+newly generated `authkey` and `keywrap` passphrases.  Destroy old passphrases.
 
 **Routine:** check that the most accessible backup YubiHSM (e.g., office) works
 every three months.  Check all other backup YubiHSM replicas on a yearly basis.
 
 ### Signing oracle YubiHSMs
 
-The signing oracle YubiHSMs get their key(s) imported under wrap while plugged
+The signing-oracle YubiHSMs get their key(s) imported under wrap while plugged
 into the provisioning machine.  After import, the wrap key and the default
 authentication key is deleted in favor of an authentication key that only
 permits signing: capability `sign-eddsa` and delegated capabilities `none`.
 The domain can be set to all or only to match the log server or witness key; it
 does not really matter as no new key can be imported without reprovisioning.
 
-Each signing oracle YubiHSM should have _its own_ `authkey` passphrase.
+Each signing-oracle YubiHSM should have _its own_ `authkey` passphrase.
 Assuming a primary log server, a secondary log server, and a witness, this
-results in another three secrets to be stored on all USB thumb drives.
+results in another three secrets to be stored on the 3x USB thumb drives.
 
 Only transfer secret passphrases to networked nodes that are in active use.  Do
 this manually, and store them in files that require root privileges to access.
+
+If it is detected that a signing-oracle YubiHSM is breached (e.g., it is lost or
+somehow broken), reprovision a new one from backup.  Destroy the old passphrase.
 
 **Routine:** Automate checks that verify if a node's YubiHSM is plugged-in.
 Delete passphrases that are stored on disk if a node becomes inactive.
@@ -152,9 +165,9 @@ Delete passphrases that are stored on disk if a node becomes inactive.
 ### Equipment
 
   - 2x backup YubiHSMs
-  - 1x signing oracle YubiHSM (primary log server)
-  - 1x signing oracle YubiHSM (secondary log server)
-  - 1x signing oracle YubiHSM (witness)
+  - 1x signing-oracle YubiHSM (primary log server)
+  - 1x signing-oracle YubiHSM (secondary log server)
+  - 1x signing-oracle YubiHSM (witness)
   - 3x USB thumb drives (different models/vendors)
   - 1x dedicated provisioning machine configured with [YubiHSM2 tooling][], the
     scripts for automation linked below, and no network access
@@ -169,9 +182,9 @@ Delete passphrases that are stored on disk if a node becomes inactive.
   - 3x physically secure homes for USB thumb drives
   - Secure site(s) where the machines with online YubiHSMs are operated
 
-The sites that contain backup and signing oracle YubiHSMs may be the same.
+The sites that contain backup and signing-oracle YubiHSMs may be the same.
 
-### Provision
+### Provisioning
 
 Run the [provision](../scripts/provision) script and follow the instructions.
 Take note of which YubiHSM serial number is provisioned with what.  Save stdout
@@ -181,18 +194,17 @@ If there's already a log server and witness ready to be deployed, transfer the
 two authentication passphrases by logging in to the respective systems via SSH.
 Transfer here means read them from the provisioning laptop and write manually.
 
-Put offline YubiHSMs and USB thumb drives in tamper-evident bags.  Populate the
-git repository table with initial information.  You may also want to save the
-used [config](../scripts/config), which contains the exact object IDs and
-domains that were selected when running the provision script.  You will need
-those when configuring your log server and witness with signing oracle access.
-
-Finally get the different YubiHSMs and USB thumb drives into their distinct
-physically secure locations.  Store the provisioning machine with the most
-accessible offline YubiHSM, so that it is available for routine checks etc.
-
 XXX: makes sense to not plug USB thumb drive with backup passphrases into
-anything but the provisioning machine.  But less so for other passphrases.
+anything but the provisioning machine.  But less so for other passphrases?
 
-XXX: it might be worth saying something about the difference between gaining
-remote access to log server and witness, both in terms of difficulty and impact.
+Put backup YubiHSMs and USB thumb drives into tamper-evident bags.  Populate the
+private git repository table with initial storage locations and serial numbers.
+
+Transport the different devices to their distinct storage locations.  Plug
+signing-oracle YubiHSMs into their respective networked nodes, or store them in
+the same physical location as a backup YubiHSM until they are ready to be used.
+
+Appoint someone to be responsible for following up on routine checks.
+
+If it is desired to showcase to others that this provision ceremony was used,
+optionally invite one or more independent parties to witness and take notes.
