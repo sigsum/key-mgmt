@@ -81,6 +81,13 @@ as creating a replica of a backup or provisioning a log server signing-oracle.
 For each YubiHSM that needs to be provisioned:
 
     $ ./scripts/yhp-reset
+    *** INSERT YubiHSM to factory-reset
+    ENTER to continue
+    *** FOUND YubiHSM, serial number 0018952891
+    ENTER to continue
+    *** INSERT again while TOUCHING the YubiHSM for 10s
+    ENTER to continue
+    *** OK
 
 The above script will exit with error unless the YubiHSM is in a state that
 corresponds to a complete factory-reset.  In other words, there's exactly one
@@ -89,10 +96,43 @@ object stored on the YubiHSM.  That one object is a default authentication key.
 ### Generate keys and create initial backup
 
     $ ./scripts/yhp-keygen | tee backup-1.txt
+    *** INSERT YubiHSM keygen and initial backup provisioning
+    ENTER to continue
+    *** FOUND YubiHSM, serial number XXXXXXXXXX
+    ENTER to continue
+    Found 4 object(s)
+    id: 0x0064, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Backup authentication
+    id: 0x0190, type: wrap-key, algo: aes128-ccm-wrap, sequence: 0, label: Common wrap key
+    id: 0x01f4, type: asymmetric-key, algo: ed25519, sequence: 0, label: Log server signing key
+    id: 0x0258, type: asymmetric-key, algo: ed25519, sequence: 0, label: Witness signing key
+    
+    backup_authkey_passphrase=fdaf209618830d9ed9f5fb0f7af83068
+    backup_wrapkey_passphrase=b7924ea7eaf959d5b23d3ec5c68208a0
+    backup_serial_number=XXXXXXXXXX
 
 ### Provision backup replica from backup
 
     $ ./scripts/yhp-backup | tee backup-2.txt
+    *** INSERT YubiHSM to create a backup replica from
+    ENTER to continue
+    *** FOUND YubiHSM, serial number XXXXXXXXXX
+    ENTER to continue
+    ENTER authkey passphrase: fdaf209618830d9ed9f5fb0f7af83068
+    ENTER wrapkey passphrase: b7924ea7eaf959d5b23d3ec5c68208a0
+    
+    *** INSERT YubiHSM to provision new backup replica onto (must be in factory-reset state)
+    ENTER to continue
+    *** FOUND YubiHSM, serial number YYYYYYYYYY
+    ENTER to continue
+    Found 4 object(s)
+    id: 0x0064, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Backup authentication
+    id: 0x0190, type: wrap-key, algo: aes128-ccm-wrap, sequence: 0, label: Common wrap key
+    id: 0x01f4, type: asymmetric-key, algo: ed25519, sequence: 0, label: Log server signing key
+    id: 0x0258, type: asymmetric-key, algo: ed25519, sequence: 0, label: Witness signing key
+    
+    backup_authkey_passphrase=fdaf209618830d9ed9f5fb0f7af83068
+    backup_wrapkey_passphrase=b7924ea7eaf959d5b23d3ec5c68208a0
+    backup_serial_number=YYYYYYYYYY
 
 Note that the same authkey and wrapkey passphrases are used.  They are
 redundantly written to the file so that clean-up gets easier in the future.  For
@@ -102,12 +142,44 @@ YubiHSM similar to the above, store `backup-3.txt` and delete `backup-1.txt`.
 ### Provision log server signing-oracle from backup
 
     $ ./scripts/yhp-logsrv | tee logsrv-1.txt
+    *** INSERT YubiHSM to restore log server signing key from
+    ENTER to continue
+    *** FOUND YubiHSM, serial number XXXXXXXXXX
+    ENTER to continue
+    ENTER authkey passphrase: fdaf209618830d9ed9f5fb0f7af83068
+    ENTER wrapkey passphrase: b7924ea7eaf959d5b23d3ec5c68208a0
+    
+    *** INSERT YubiHSM to provision new logsrv signing oracle on (must be in factory-reset state)
+    ENTER to continue
+    *** FOUND YubiHSM, serial number ZZZZZZZZZZ
+    ENTER to continue
+    Found 2 object(s)
+    id: 0x00c8, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Logsrv authentication
+    id: 0x01f4, type: asymmetric-key, algo: ed25519, sequence: 0, label: Log server signing key
+    
+    logsrv_authkey_passphrase(ZZZZZZZZZZ)=35bb8bdb943620df860e5cf4c9dcf0cd
 
 Repeat this for the number of log server nodes you have in production, e.g., 2.
 
 ### Provision witness signing-oracle from backup
 
     $ ./scripts/yhp-witness | tee witness.txt
+    *** INSERT YubiHSM to restore witness signing key from
+    ENTER to continue
+    *** FOUND YubiHSM, serial number XXXXXXXXXX
+    ENTER to continue
+    ENTER authkey passphrase: fdaf209618830d9ed9f5fb0f7af83068
+    ENTER wrapkey passphrase: b7924ea7eaf959d5b23d3ec5c68208a0
+    
+    *** INSERT YubiHSM to provision new witness signing oracle on (must be in factory-reset state)
+    ENTER to continue
+    *** FOUND YubiHSM, serial number TTTTTTTTTT
+    ENTER to continue
+    Found 2 object(s)
+    id: 0x012c, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Witness authentication
+    id: 0x0258, type: asymmetric-key, algo: ed25519, sequence: 0, label: Witness signing key
+    
+    witness_authkey_passphrase(TTTTTTTTTT)=ea99fcdf59ae9328754a979e87c181fe
 
 ### Restore from backup in the future
 
