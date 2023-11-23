@@ -31,4 +31,4 @@ EOF
 
 echo "backup_authkey_passphrase=$authkey_pass"
 echo "backup_wrapkey_passphrase=$wrapkey_pass"
-echo "backup_id=$id"
+echo "backup_serial_number=$id"

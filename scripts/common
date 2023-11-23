@@ -31,15 +31,19 @@ function yubihsm_probe() {
 	info "INSERT YubiHSM $1"
 	read -rp "ENTER to continue"
 
-	id=$(lsusb | grep YubiHSM | cut -d' ' -f6)
-	if [[ -z "$id" ]]; then
+	bus=$(lsusb | grep YubiHSM | cut -d' ' -f2)
+	device=$(lsusb | grep YubiHSM | cut -d' ' -f4)
+	if [[ -z "$bus" ]] || [[ -z "$device" ]]; then
 		die "failed to locate YubiHSM, is it plugged in?"
 	fi
 
-	info "FOUND YubiHSM, id $id"
+	serial_line=$(lsusb -vs "$bus:$device" | grep iSerial)
+	serial_number=${serial_line##* }
+
+	info "FOUND YubiHSM, serial number $serial_number"
 	read -rp "ENTER to continue"
 
-	echo "$id"
+	echo "$serial_number"
 }
 
 function yubihsm_shell() {

@@ -45,4 +45,4 @@ EOF
 
 echo "backup_authkey_passphrase=$authkey_passphrase"
 echo "backup_wrapkey_passphrase=$wrapkey_passphrase"
-echo "backup_id=$id"
+echo "backup_serial_number=$id"
