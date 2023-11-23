@@ -39,9 +39,6 @@ function yubihsm_probe() {
 	info "FOUND YubiHSM, id $id"
 	read -rp "ENTER to continue"
 
-	dev=/dev/bus/usb/$(lsusb | grep YubiHSM | cut -d' ' -f2,4 | tr ' ' '/' | sed 's/://g')
-	sudo chgrp "$USER" "$dev"
-
 	echo "$id"
 }
 

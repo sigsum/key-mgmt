@@ -16,7 +16,7 @@ Locate a release for your system's distribution on Yubico's [YubiHSM page][].
 
 ### Debian
 
-Example after downloading and verifying the signature for Debian 12:
+Example after downloading and verifying the signature for a Debian 12 release:
 
     $ tar -xzf yubihsm2-sdk-2023-11-debian12-amd64.tar.gz
     $ cd yubihsm2-sdk-2023-11-debian12
@@ -24,6 +24,37 @@ Example after downloading and verifying the signature for Debian 12:
 
 The above installs commands like `yubihsm-shell` and `yubihsm-connector`.  Undo
 the install with `dpkg -r PKGNAME`, followed by `userdel yubihsm-connector`.
+
+Add a udev rule to grant your user access to communicate with YubiHSMs.  For
+example, copy-paste the following into `/etc/udev/rules.d/50-yubihsm2.rules`:
+
+    # Based on:
+    # https://developers.yubico.com/YubiHSM2/Component_Reference/yubihsm-connector/
+    
+    # This udev file should be used with udev 188 and newer
+    ACTION!="add|change", GOTO="yubihsm2_connector_end"
+    
+    # Yubico YubiHSM 2
+    # The OWNER attribute here has to match the uid of the process running the Connector
+    SUBSYSTEM=="usb", ATTRS{idVendor}=="1050", ATTRS{idProduct}=="0030", GROUP="YOURUSER"
+    
+    LABEL="yubihsm2_connector_end"
+
+Reload the added configuration:
+
+    # udevadm control --reload-rules
+    # udevadm trigger
+
+### Verify setup
+
+Insert your YubiHSM and run `yubihsm-connector -d`, then check that it is
+possible to connect with `yubihsm-shell` in a separate terminal:
+
+    $ yubihsm-shell
+    Using default connector URL: http://localhost:12345
+    yubihsm> connect
+    Session keepalive set up to run every 15 seconds
+    yubihsm> ^D
 
 ## Install yubihsm-agent
 
