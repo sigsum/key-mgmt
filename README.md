@@ -83,7 +83,7 @@ For each YubiHSM that needs to be provisioned:
     $ ./scripts/yhp-reset
     *** INSERT YubiHSM to factory-reset
     ENTER to continue
-    *** FOUND YubiHSM, serial number 0018952891
+    *** FOUND YubiHSM, serial number XXXXXXXXX
     ENTER to continue
     *** INSERT again while TOUCHING the YubiHSM for 10s
     ENTER to continue
