@@ -8,7 +8,9 @@ cd "$(dirname "$0")"
 ###
 # Prompt the user to factory-reset
 ###
-id=$(yubihsm_probe "")
+yubihsm_probe "to factory-reset" >/dev/null
+info "INSERT again while TOUCHING the YubiHSM for 10s"
+read -rp "ENTER to continue"
 
 ###
 # Check to see if it worked
