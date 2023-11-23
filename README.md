@@ -1,4 +1,4 @@
-# YubiHSM Agent
+# YubiHSM
 
 This repository provides documentation and scripts to provision YubiHSMs for log
 servers and witnesses.  To integrate the provisioned YubiHSMs with the ssh-agent

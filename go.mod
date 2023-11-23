@@ -1,3 +1,3 @@
-module sigsum.org/yubihsm-agent
+module sigsum.org/yubihsm
 
 go 1.19

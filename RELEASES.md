@@ -15,10 +15,10 @@ Note that a release is simply a git-tag specified on our mailing list.  There
 may be intermediate git-tags between two advertised releases.  These
 intermediate tags are **not** released and supported.
 
-The yubihsm-agent Go module only contains internal libraries.  By the terms of
-the LICENSE file you are free to use this code "as is" in almost any way you
-like.  However, we support its use **only** via the `yubihsm-agent` program.  We
-don't aim to provide any backwards compatibility for internal interfaces.
+The yubihsm Go module only contains internal libraries.  By the terms of the
+LICENSE file you are free to use this code "as is" in almost any way you like.
+However, we support its use **only** via the `yubihsm-agent` program.  We don't
+aim to provide any backwards compatibility for internal interfaces.
 
 We encourage use of the key management strategy described in this repository,
 including use of the released scripts for provisioning and `yubihsm-agent` to
