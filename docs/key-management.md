@@ -35,8 +35,8 @@ These objectives imply a threat model where the trusted personnel is honest at
 all times.  In other words, what we are trying to protect against are external
 threats and failures.  Examples of threats include a device that gets physically
 stolen or remotely accessible as a result of a networked node getting owned.
-Examples of failures include a device that breaks.  We tolerate `n-1` failures,
-with `n` set to `2` for backup YubiHSMs and `3` for USB sticks with passphrases.
+Examples of failures include devices that break.  We assume that at least one of
+two backup YubiHSM and one of three backup USB stick function at all times.
 
 Randomness produced by a YubiHSM is assumed to be good, so that the generated
 keys and passphrases are computationally hard to brute force (128-bit security).
@@ -95,6 +95,17 @@ changed immediately.  This involves all backup and signing-oracle YubiHSMs.
 If a USB thumb drive is plugged into a system that is not a dedicated
 provisioning machine (introduced below), it should be considered compromised.
 
+The above is essential for passphrases associated with backup YubiHSMs
+(described below).  To make day-to-day operations easier, you may store
+passphrases associated with signing-oracle YubiHSMs (also described below) on
+separate USB sticks that are otherwise tracked in the same way as above with one
+main difference: they may be plugged into a another machine than the one used
+for provisioning.  Just avoid plugging them into the provisioning machine again.
+
+(This will make day-to-day operations much easier.  It also reflects that
+signing-oracle passphrases will necessarily be exposed on other machines.  There
+is a concrete example of how to do the split in the repository's README file.)
+
 **Routine:** check safe and its tamper-evident bag once per month.
 
 ### Backup YubiHSMs
@@ -151,6 +162,9 @@ Each signing-oracle YubiHSM should have _its own_ `authkey` passphrase.
 Assuming a primary log server, a secondary log server, and a witness, this
 results in another three secrets to be stored on the 3x USB thumb drives.
 
+As noted earlier, day-to-day operations will be much easier if different USB
+thumb drives are used for this (so they can be plugged into a regular laptop).
+
 Only transfer secret passphrases to networked nodes that are in active use.  Do
 this manually, and store them in files that require root privileges to access.
 
@@ -168,9 +182,11 @@ Delete passphrases that are stored on disk if a node becomes inactive.
   - 1x signing-oracle YubiHSM (primary log server)
   - 1x signing-oracle YubiHSM (secondary log server)
   - 1x signing-oracle YubiHSM (witness)
-  - 3x USB thumb drives (different models/vendors)
+  - 3x USB thumb drives for backup (different models/vendors)
+  - 3x USB thumb drives for operations (optional but recommended)
+    - May be the same model/vendor (no essential secrets wrt. key recovery)
   - 1x dedicated provisioning machine configured with [YubiHSM2 tooling][], the
-    scripts for automation linked below, and no network access
+    scripts for automation (see README instructions), and no network access
   - 1x private git repository 
   - Many tamper-evident bags
 
@@ -186,16 +202,12 @@ The sites that contain backup and signing-oracle YubiHSMs may be the same.
 
 ### Provisioning
 
-Run the [provision](../scripts/provision) script and follow the instructions.
-Take note of which YubiHSM serial number is provisioned with what.  Save stdout
-output to each USB thumb drive: it's the secret passphrases described above.
+Run [all provision scripts](../README.md) and follow the instructions.  Take
+note of which YubiHSM serial number is provisioned with what.  Save stdout
+output to each USB thumb drive as it contains the above secret passphrases.
 
 If there's already a log server and witness ready to be deployed, transfer the
-two authentication passphrases by logging in to the respective systems via SSH.
-Transfer here means read them from the provisioning laptop and write manually.
-
-XXX: makes sense to not plug USB thumb drive with backup passphrases into
-anything but the provisioning machine.  But less so for other passphrases?
+two authentication passphrases by logging in to the respective systems remotely.
 
 Put backup YubiHSMs and USB thumb drives into tamper-evident bags.  Populate the
 private git repository table with initial storage locations and serial numbers.
