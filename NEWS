@@ -1,0 +1,13 @@
+NEWS for yubihsm-agent v0.0.X
+
+    Initial release of yubihsm-agent.
+
+    Features:
+
+    * Documentation on manging secret keys for log servers and witnesses
+    * Scripts to reset, provision, and reprovision YubiHSMs from backup
+    * XXX: Separate yubihsm-agent program that makes a locally plugged-in YubiHSM
+      available via the SSH agent protocol.  Only Ed25519 signing is supported.
+
+    XXX: specify what tooling versions we've tested against
+    XXX: link ssh agent protocol spec
