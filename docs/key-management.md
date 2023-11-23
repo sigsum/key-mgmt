@@ -35,8 +35,8 @@ These objectives imply a threat model where the trusted personnel is honest at
 all times.  In other words, what we are trying to protect against are external
 threats and failures.  Examples of threats include a device that gets physically
 stolen or remotely accessible as a result of a networked node getting owned.
-Examples of failures include devices that break.  We assume that at least one of
-two backup YubiHSM and one of three backup USB stick function at all times.
+Examples of failures include devices that break.  We assume at least one of two
+backup YubiHSMs and one of three backup USB thumb drives function at all times.
 
 Randomness produced by a YubiHSM is assumed to be good, so that the generated
 keys and passphrases are computationally hard to brute force (128-bit security).
