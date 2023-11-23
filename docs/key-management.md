@@ -98,9 +98,10 @@ provisioning machine (introduced below), it should be considered compromised.
 The above is essential for passphrases associated with backup YubiHSMs
 (described below).  To make day-to-day operations easier, you may store
 passphrases associated with signing-oracle YubiHSMs (also described below) on
-separate USB sticks that are otherwise tracked in the same way as above with one
-main difference: they may be plugged into a another machine than the one used
-for provisioning.  Just avoid plugging them into the provisioning machine again.
+separate USB thumb drives that are otherwise tracked in the same way as above
+with one main difference: they may be plugged into another machine than the one
+used for provisioning.  If so, do not plug them back into the provisioning
+machine again as such USB thumb drives have been exposed to less safe places.
 
 (This will make day-to-day operations much easier.  It also reflects that
 signing-oracle passphrases will necessarily be exposed on other machines.  There
