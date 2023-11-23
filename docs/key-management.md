@@ -207,15 +207,14 @@ Run [all provision scripts](../README.md) and follow the instructions.  Take
 note of which YubiHSM serial number is provisioned with what.  Save stdout
 output to each USB thumb drive as it contains the above secret passphrases.
 
-If there's already a log server and witness ready to be deployed, transfer the
-two authentication passphrases by logging in to the respective systems remotely.
-
 Put backup YubiHSMs and USB thumb drives into tamper-evident bags.  Populate the
 private git repository table with initial storage locations and serial numbers.
 
 Transport the different devices to their distinct storage locations.  Plug
 signing-oracle YubiHSMs into their respective networked nodes, or store them in
 the same physical location as a backup YubiHSM until they are ready to be used.
+
+Transfer the respective authentication passphrases to nodes that are active.
 
 Appoint someone to be responsible for following up on routine checks.
 
