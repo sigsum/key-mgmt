@@ -65,7 +65,7 @@ function yubihsm_get_passphrase() {
 	yubihsm_shell << EOF
 		connect
 		session open   "$1" "$2"
-		get     random   0   32
+		get     random   0   16
 		session close    0
 EOF
 }
