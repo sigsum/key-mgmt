@@ -35,7 +35,7 @@ example, copy-paste the following into `/etc/udev/rules.d/50-yubihsm2.rules`:
     ACTION!="add|change", GOTO="yubihsm2_connector_end"
     
     # Yubico YubiHSM 2
-    # The OWNER attribute here has to match the uid of the process running the Connector
+    # The GROUP attribute here has to match the user that runs the Connector
     SUBSYSTEM=="usb", ATTRS{idVendor}=="1050", ATTRS{idProduct}=="0030", GROUP="YOURUSER"
     
     LABEL="yubihsm2_connector_end"
