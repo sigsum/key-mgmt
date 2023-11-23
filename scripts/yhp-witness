@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set -eu
+
+cd "$(dirname "$0")"
+. config # loads constants for YubiHSM object IDs and such
+. common # loads helpers and reads environment variables
+trap clean_up EXIT
+
+###
+# Read backup
+###
+yubihsm_probe "to restore witness signing key from" >/dev/null
+[[ -z "$authkey_passphrase" ]] && read -rp "ENTER authkey passphrase: " authkey_passphrase
+[[ -z "$wrapkey_passphrase" ]] && read -rp "ENTER wrapkey passphrase: " wrapkey_passphrase
+witness_authkey_passphrase=$(yubihsm_get_passphrase "$BACKUP_AUTH_ID" "$authkey_passphrase")
+
+yubihsm_shell << EOF
+	connect
+	session open      "$BACKUP_AUTH_ID"  "$authkey_passphrase"
+	get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$WITNESS_SIGNING_KEY_ID" "$wrap_file_witness"
+	session close   0
+EOF
+
+###
+# Prepare signing oracle
+###
+id=$(yubihsm_probe "to provision new witness signing oracle on (must be in factory-reset state)")
+
+yubihsm_shell << EOF
+	connect
+	session open 1 password
+
+	put     authkey 0 "$WITNESS_AUTH_ID" "$WITNESS_AUTH_LABEL" "$WITNESS_SIGNING_DOMAIN" sign-eddsa none "$witness_authkey_passphrase"
+	put     wrapkey 0 "$WRAPPING_KEY_ID" "$WRAPPING_KEY_LABEL" "$WITNESS_SIGNING_DOMAIN" import-wrapped,export-wrapped exportable-under-wrap,sign-eddsa "$wrapkey_passphrase"
+	put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_witness"
+
+	delete          0 "$WRAPPING_KEY_ID" wrap-key
+	delete          0 1                  authentication-key
+
+	list    objects 0
+	session close   0
+EOF
+
+echo "witness_authkey_passphrase($id)=$witness_authkey_passphrase"

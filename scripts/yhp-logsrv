@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set -eu
+
+cd "$(dirname "$0")"
+. config # loads constants for YubiHSM object IDs and such
+. common # loads helpers and reads environment variables
+trap clean_up EXIT
+
+###
+# Read backup
+###
+yubihsm_probe "to restore log server signing key from" >/dev/null
+[[ -z "$authkey_passphrase" ]] && read -rp "ENTER authkey passphrase: " authkey_passphrase
+[[ -z "$wrapkey_passphrase" ]] && read -rp "ENTER wrapkey passphrase: " wrapkey_passphrase
+logsrv_authkey_passphrase=$(yubihsm_get_passphrase "$BACKUP_AUTH_ID" "$authkey_passphrase")
+
+yubihsm_shell << EOF
+	connect
+	session open      "$BACKUP_AUTH_ID"  "$authkey_passphrase"
+	get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$LOGSRV_SIGNING_KEY_ID" "$wrap_file_log"
+	session close   0
+EOF
+
+###
+# Prepare signing oracle
+###
+id=$(yubihsm_probe "to provision new logsrv signing oracle on (must be in factory-reset state)")
+
+yubihsm_shell << EOF
+	connect
+	session open 1 password
+
+	put     authkey 0 "$LOGSRV_AUTH_ID"  "$LOGSRV_AUTH_LABEL"  "$LOGSRV_SIGNING_DOMAIN" sign-eddsa none "$logsrv_authkey_passphrase"
+	put     wrapkey 0 "$WRAPPING_KEY_ID" "$WRAPPING_KEY_LABEL" "$LOGSRV_SIGNING_DOMAIN" import-wrapped,export-wrapped exportable-under-wrap,sign-eddsa "$wrapkey_passphrase"
+	put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_log"
+
+	delete          0 "$WRAPPING_KEY_ID" wrap-key
+	delete          0 1                  authentication-key
+
+	list    objects 0
+	session close   0
+EOF
+
+echo "logsrv_authkey_passphrase($id)=$logsrv_authkey_passphrase"

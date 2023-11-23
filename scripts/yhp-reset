@@ -1,0 +1,32 @@
+#!/bin/bash
+
+set -eu
+
+cd "$(dirname "$0")"
+. common # gain access to a few helpers
+
+###
+# Prompt the user to factory-reset
+###
+id=$(yubihsm_probe "")
+
+###
+# Check to see if it worked
+###
+tmp=$(mktemp)
+yubihsm_shell << EOF >"$tmp"
+	connect
+	session open    1 password
+	list    objects 0
+	session close   0
+EOF
+
+want_found="Found 1 object(s)" 
+want_obj="id: 0x0001, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: DEFAULT AUTHKEY CHANGE THIS ASAP" 
+err_msg="your attempt to factory-reset with a 10s TOUCH failed, try again"
+
+grep -q -e "$want_found" "$tmp" || die "$err_msg"
+grep -q -e "$want_obj"   "$tmp" || die "$err_msg"
+
+rm -f "$tmp"
+info "OK"

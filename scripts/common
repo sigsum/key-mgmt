@@ -1,0 +1,71 @@
+#!/bin/bash
+
+###
+# Options, overide interactive prompts by setting environment variables:
+#
+#   - AUTHKEY_PASSPHRASE: authkey passphrase configured on a backup YubiHSM
+#   - WRAPKEY_PASSPHRASE: wrapkey passphrase configured on a backup YubiHSM
+###
+authkey_passphrase=${AUTHKEY_PASSPHRASE:-}
+wrapkey_passphrase=${WRAPKEY_PASSPHRASE:-}
+
+###
+# Internal
+###
+wrap_file_log=logsrv.wrapped
+wrap_file_witness=witness.wrapped
+function clean_up() {
+	set +eu
+
+	shred -zun 12 "$wrap_file_log" >/dev/null 2>&1
+	shred -zun 12 "$wrap_file_witness" >/dev/null 2>&1
+
+	[[ -z $(pidof yubihsm-connector) ]] || warn "some yubihsm-connector is still running"
+}
+
+function info() { echo "*** $*"      >&2;         }
+function warn() { echo "WARNING: $*" >&2;         }
+function die()  { echo "ERROR: $*"   >&2; exit 1; }
+
+function yubihsm_probe() {
+	info "INSERT YubiHSM $1"
+	read -rp "ENTER to continue"
+
+	id=$(lsusb | grep YubiHSM | cut -d' ' -f6)
+	if [[ -z "$id" ]]; then
+		die "failed to locate YubiHSM, is it plugged in?"
+	fi
+
+	info "FOUND YubiHSM, id $id"
+	read -rp "ENTER to continue"
+
+	dev=/dev/bus/usb/$(lsusb | grep YubiHSM | cut -d' ' -f2,4 | tr ' ' '/' | sed 's/://g')
+	sudo chgrp "$USER" "$dev"
+
+	echo "$id"
+}
+
+function yubihsm_shell() {
+	local pid
+	local tmp
+
+	yubihsm-connector >/dev/null 2>&1 &
+	pid=$!
+
+	tmp=$(mktemp)
+	cat | yubihsm-shell 2>"$tmp"
+	error=$(grep -e "Failed to create session" "$tmp" || true)
+
+	rm -f "$tmp"
+	kill "$pid" >/dev/null 2>&1
+	[[ -z "$error" ]] || die "failed to run YubiHSM commands, incorrect credentials or factory-reset expected?"
+}
+
+function yubihsm_get_passphrase() {
+	yubihsm_shell << EOF
+		connect
+		session open   "$1" "$2"
+		get     random   0   32
+		session close    0
+EOF
+}
