@@ -18,7 +18,7 @@ test-agent:
   script: make check
   artifacts:
     paths:
-    - ./tests/tmp.*
+    - tests/tmp.*
 
 # Succeeds if no changes are suggested by gofmt -d .
 gofmt:
