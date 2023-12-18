@@ -1,0 +1,13 @@
+#! /bin/sh
+
+set -e
+
+cd "$(dirname $0)"
+
+rm -f tmp.socket tmp.out tmp.key tmp.key.pub
+ssh-keygen -q -N '' -t ed25519 -f tmp.key
+
+go run ../cmd/yubihsm-agent -s ./tmp.socket -k tmp.key \
+   /bin/sh -c 'ls -l $SSH_AUTH_SOCK' > tmp.out
+
+grep '^srwx------ .* ./tmp.socket$' tmp.out >/dev/null
