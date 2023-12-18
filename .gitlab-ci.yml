@@ -16,6 +16,9 @@ test-go:
 test-agent:
   stage: test
   script: make check
+  artifacts:
+    paths:
+    - ./tests/tmp.*
 
 # Succeeds if no changes are suggested by gofmt -d .
 gofmt:
