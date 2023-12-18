@@ -17,6 +17,7 @@ test-agent:
   stage: test
   script: make check
   artifacts:
+    when: always
     paths:
     - tests/tmp.*
 
