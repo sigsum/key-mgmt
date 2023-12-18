@@ -6,10 +6,10 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ed25519"
-	"encoding/binary"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -30,88 +30,91 @@ var opensshPrivateKeyPrefix = bytes.Join([][]byte{
 	serializeUint32(0), serializeUint32(1), // empty kdf, and #keys = 1
 }, nil)
 
-// Skips prefix, if present, otherwise return nil.
-func skipPrefix(buffer []byte, prefix []byte) []byte {
-	if !bytes.HasPrefix(buffer, prefix) {
-		return nil
-	}
-	return buffer[len(prefix):]
-}
+var opensshPrivateKeyPadding = []byte{1, 2, 3, 4, 5, 6, 7}
 
-func parseUint32(buffer []byte) (uint32, []byte) {
-	if buffer == nil || len(buffer) < 4 {
-		return 0, nil
-	}
-	return binary.BigEndian.Uint32(buffer[:4]), buffer[4:]
-}
-
-func parseString(buffer []byte) ([]byte, []byte) {
-	length, buffer := parseUint32(buffer)
-	if buffer == nil {
-		return nil, nil
-	}
-	if int64(len(buffer)) < int64(length) {
-		return nil, nil
-	}
-	return buffer[:int(length)], buffer[int(length):]
-}
-
-func parsePublicEd25519(blob []byte) ([]byte, error) {
-	pub := skipPrefix(blob, bytes.Join([][]byte{
+func readPublicEd25519(r io.Reader) ([]byte, error) {
+	if err := readSkip(r, bytes.Join([][]byte{
 		serializeString("ssh-ed25519"),
 		serializeUint32(ed25519.PublicKeySize),
-	}, nil))
-
-	if pub == nil {
-		return nil, fmt.Errorf("invalid public key blob prefix")
+	}, nil)); err != nil {
+		return nil, fmt.Errorf("invalid public key blob prefix: %v", err)
 	}
-	if len(pub) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("invalid public key length: %v", len(blob))
-	}
-	return pub, nil
+	return readBytes(r, ed25519.PublicKeySize)
 }
 
-func ParsePrivateKey(ascii []byte) (crypto.Signer, error) {
-	parseBlob := func(blob []byte) (crypto.Signer, error) {
-		blob = skipPrefix(blob, opensshPrivateKeyPrefix)
-		if blob == nil {
-			return nil, fmt.Errorf("invalid or encrypted private key")
-		}
-		publicKeyBlob, blob := parseString(blob)
-		if blob == nil {
-			return nil, fmt.Errorf("invalid private key, pubkey missing")
-		}
-		pub, err := parsePublicEd25519(publicKeyBlob)
-		if err != nil {
-			return nil, fmt.Errorf("invalid private key, pubkey invalid: %w", err)
-		}
-		length, blob := parseUint32(blob)
-		if blob == nil || int64(length) != int64(len(blob)) ||
-			length%8 != 0 {
-			return nil, fmt.Errorf("invalid private key")
-		}
-		n1, blob := parseUint32(blob)
-		n2, blob := parseUint32(blob)
-		if blob == nil || n1 != n2 {
-			return nil, fmt.Errorf("invalid private key, bad nonce")
-		}
-		blob = skipPrefix(blob, publicKeyBlob)
-		if blob == nil {
-			return nil, fmt.Errorf("invalid private key, inconsistent public key")
-		}
-		keys, blob := parseString(blob)
-		if blob == nil {
-			return nil, fmt.Errorf("invalid private key, private key missing")
-		}
-		// The keys blob consists of the 32-byte private key +
-		// 32 byte public key.
-		if len(keys) != 64 {
-			return nil, fmt.Errorf("unexpected private key size: %d", len(keys))
-		}
-		if !bytes.Equal(pub[:], keys[32:]) {
-			return nil, fmt.Errorf("inconsistent public key")
-		}
-		return ed25519.PrivateKey(keys), nil
+// Reads the inner private key data, i.e., the section that is
+// potentially encrypted (although we handle only unencrypted key
+// files).
+func readPrivateKeyInner(r io.Reader, publicKeyBlob []byte) (crypto.Signer, error) {
+	pub, err := parseBytes(publicKeyBlob, nil, readPublicEd25519)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key, pubkey invalid: %w", err)
+	}
+
+	n1, err := readUint32(r)
+	if err != nil {
+		return nil, err
+	}
+	n2, err := readUint32(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if n1 != n2 {
+		return nil, fmt.Errorf("invalid private key, bad nonce")
+	}
+
+	if err := readSkip(r, publicKeyBlob); err != nil {
+		return nil, fmt.Errorf("invalid private key, inconsistent public key: %v", err)
+	}
+	keys, err := readString(r, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key, private key missing: %v", err)
+	}
+	// The keys blob consists of the 32-byte private key +
+	// 32 byte public key.
+	if len(keys) != 64 {
+		return nil, fmt.Errorf("unexpected private key size: %d", len(keys))
+	}
+	if !bytes.Equal(pub[:], keys[32:]) {
+		return nil, fmt.Errorf("inconsistent public key")
+	}
+	_, err = readString(r, 100)
+	if err != nil {
+		return nil, fmt.Errorf("comment string missing")
+	}
+	return ed25519.PrivateKey(keys), nil
+}
+
+// Reads a binary private key file, i.e., after PEM decapsulation.
+func readPrivateKey(r io.Reader) (crypto.Signer, error) {
+	if err := readSkip(r, opensshPrivateKeyPrefix); err != nil {
+		return nil, fmt.Errorf("invalid or encrypted private key: %v", err)
+	}
+	publicKeyBlob, err := readString(r, 100)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key, pubkey missing: %v", err)
+	}
+	privBlob, err := readString(r, 1000)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key: %v", err)
+	}
+	if length := len(privBlob); length%8 != 0 {
+		return nil, fmt.Errorf("invalid private key length: %d", length)
+	}
+
+	return parseBytes(privBlob, opensshPrivateKeyPadding,
+		func(r io.Reader) (crypto.Signer, error) {
+			return readPrivateKeyInner(r, publicKeyBlob)
+		})
+}
+
+// Reads an ASCII format private key. Supports only the case of a
+// single unencrypted key.
+func ReadPrivateKeyFile(fileName string) (crypto.Signer, error) {
+	ascii, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, err
 	}
 	block, _ := pem.Decode(ascii)
 	if block == nil {
@@ -120,18 +123,11 @@ func ParsePrivateKey(ascii []byte) (crypto.Signer, error) {
 	if block.Type != pemPrivateKeyTag {
 		return nil, fmt.Errorf("unexpected PEM tag: %q", block.Type)
 	}
-	return parseBlob(block.Bytes)
-}
-
-func ReadPrivateKeyFile(fileName string) (crypto.Signer, error) {
-	contents, err := os.ReadFile(fileName)
-	if err != nil {
-		return nil, err
-	}
-	signer, err := ParsePrivateKey(contents)
+	signer, err := parseBytes(block.Bytes, nil, readPrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("parsing private key file %q failed: %v",
 			fileName, err)
 	}
+
 	return signer, nil
 }
