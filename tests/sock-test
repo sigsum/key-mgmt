@@ -10,4 +10,6 @@ ssh-keygen -q -N '' -t ed25519 -f tmp.key
 go run ../cmd/yubihsm-agent -s ./tmp.socket -k tmp.key \
    /bin/sh -c 'ls -l $SSH_AUTH_SOCK' > tmp.out
 
-grep '^srwx------ .* ./tmp.socket$' tmp.out >/dev/null
+# On CI machines where this test runs as root, we may have a "security context",
+# and ls output "srwx------. "
+grep '^srwx------.* ./tmp.socket$' tmp.out >/dev/null
