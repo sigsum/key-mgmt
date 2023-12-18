@@ -17,27 +17,12 @@ const (
 	maxSize = 1000
 )
 
+// Returns signature formatted as an SSH signature (without outer
+// length field).
 type SshSign func([]byte) ([]byte, error)
 
-// All information the agent needs about a key.
-type AgentKey struct {
-	// SSH public key blob (without outer length field)
-	KeyBlob []byte
-	// Returns signature formatted as an SSH signature (without
-	// outer length field)
-	Sign SshSign
-}
-
-func findSigner(keys []AgentKey, key []byte) SshSign {
-	for _, o := range keys {
-		if bytes.Equal(key, o.KeyBlob) {
-			return o.Sign
-		}
-	}
-	return nil
-}
-
-func ServeAgent(r io.Reader, w io.Writer, keys ...AgentKey) error {
+// The map keys are SSH public key blobs (without outer length field).
+func ServeAgent(r io.Reader, w io.Writer, keys map[string]SshSign) error {
 	for {
 		data, err := readString(r, maxSize)
 		if err != nil {
@@ -60,8 +45,8 @@ func ServeAgent(r io.Reader, w io.Writer, keys ...AgentKey) error {
 			if err := writeUint32(rsp, uint32(len(keys))); err != nil {
 				return err
 			}
-			for _, k := range keys {
-				if err := writeString(rsp, k.KeyBlob); err != nil {
+			for k, _ := range keys {
+				if err := writeString(rsp, k); err != nil {
 					return err
 				}
 				// Arbitrary comment
@@ -85,8 +70,8 @@ func ServeAgent(r io.Reader, w io.Writer, keys ...AgentKey) error {
 			if msg.Len() > 0 {
 				return fmt.Errorf("invalid message, %d left-over bytes in sign request", msg.Len())
 			}
-			signer := findSigner(keys, key)
-			if signer == nil {
+			signer, ok := keys[string(key)]
+			if !ok {
 				if err := rsp.WriteByte(SSH_AGENT_FAILURE); err != nil {
 					return err
 				}

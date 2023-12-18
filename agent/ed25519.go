@@ -26,19 +26,17 @@ func ed25519Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	return serializeEd25519(sig), nil
 }
 
-func AgentKeyFromEd25519(signer crypto.Signer) (AgentKey, error) {
+func SshFromEd25519(signer crypto.Signer) (string, SshSign, error) {
 	publicKey := signer.Public()
 	pub, ok := publicKey.(ed25519.PublicKey)
 	if !ok {
-		return AgentKey{}, fmt.Errorf("not an Ed25519 key, type %T", publicKey)
+		return "", nil, fmt.Errorf("not an Ed25519 key, type %T", publicKey)
 	}
 	if len(pub) != ed25519.PublicKeySize {
-		return AgentKey{}, fmt.Errorf("not an Ed25519 key, unexpected length %d", len(pub))
+		return "", nil, fmt.Errorf("not an Ed25519 key, unexpected length %d", len(pub))
 	}
-	return AgentKey{
-		KeyBlob: serializeEd25519(pub),
-		Sign: func(msg []byte) ([]byte, error) {
+	return string(serializeEd25519(pub)),
+		func(msg []byte) ([]byte, error) {
 			return ed25519Sign(signer, msg)
-		},
-	}, nil
+		}, nil
 }

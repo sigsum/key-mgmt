@@ -111,10 +111,12 @@ func main() {
 }
 
 func runAgent(socketFile string, signer crypto.Signer, cmdLine []string) (int, error) {
-	agentKey, err := agent.AgentKeyFromEd25519(signer)
+	key, sign, err := agent.SshFromEd25519(signer)
 	if err != nil {
 		return 0, fmt.Errorf("Internal error: %v", err)
 	}
+	keys := map[string]agent.SshSign{key: sign}
+
 	oldMask := syscall.Umask(0077)
 	l, err := net.Listen("unix", socketFile)
 	if err != nil {
@@ -144,7 +146,7 @@ func runAgent(socketFile string, signer crypto.Signer, cmdLine []string) (int, e
 				// that.
 				return
 			}
-			go agent.ServeAgent(c, c, agentKey)
+			go agent.ServeAgent(c, c, keys)
 		}
 	}()
 
