@@ -203,6 +203,8 @@ for plugging YubiHSMs in and out of the provisioning machine.  Example below.
     ./scripts/yhp-logsrv  | tee logsrv-2.txt
     ./scripts/yhp-witness | tee witness.txt
 
+Replace `| tee` with `>` to avoid emitting sensitive information on stdout.
+
 ### Backup output files on USB sticks
 
   - `backup*`: put them on separate USB sticks that are only inserted into the
@@ -216,8 +218,6 @@ for plugging YubiHSMs in and out of the provisioning machine.  Example below.
 If it makes sense for your operational setup, you may consider storing `logsrv*`
 and `witness.txt` separately from each other.  E.g., if log servers and
 witnesses are not operated by the same day-to-day operations team.
-
-**Note:** you might want to `tee` directly to the respective USB sticks.
 
 ### Try signing using yubihsm-agent
 
