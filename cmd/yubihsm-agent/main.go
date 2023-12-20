@@ -20,6 +20,8 @@ import (
 	"sigsum.org/yubihsm/internal/hsm"
 )
 
+const sshAgentEnv = "SSH_AUTH_SOCK"
+
 func main() {
 	const usage = `
 Start an ssh-agent that acts as an ed25519 signing oracle.
@@ -69,18 +71,16 @@ use on stdin, initd/systemd style.
 	set.FlagLong(&help, "help", 'h', "Display help")
 
 	err := set.Getopt(os.Args, nil)
-
-	// Check help first; if seen, ignore errors about missing mandatory arguments.
-	if help || set.NArgs() < 1 {
-		set.PrintUsage(os.Stdout)
-		fmt.Print(usage)
-		os.Exit(0)
-	}
-
 	if err != nil {
 		log.Printf("err: %v\n", err)
 		set.PrintUsage(log.Writer())
 		os.Exit(1)
+	}
+
+	if help {
+		set.PrintUsage(os.Stdout)
+		fmt.Print(usage)
+		os.Exit(0)
 	}
 
 	if (keyId < 0 && len(keyFile) == 0) || (keyId >= 0 && len(keyFile) > 0) {
@@ -131,60 +131,63 @@ use on stdin, initd/systemd style.
 		}
 	}
 
-	status, err := runAgent(socketFile, signer, set.Args())
+	sshKey, sshSign, err := agent.SSHFromEd25519(signer)
 	if err != nil {
-		log.Fatalf("Terminating: %v", err)
+		log.Fatalf("Internal error: %v", err)
 	}
+	keys := map[string]agent.SSHSign{sshKey: sshSign}
+
+	socket, err := openSocket(socketFile)
+	if err != nil {
+		log.Fatalf("Failed to listen on UNIX socket %q: %v", socketFile, err)
+	}
+	defer socket.Close()
+	defer os.Remove(socketFile)
+
+	go runAgent(socket, keys)
+
+	status := 0
+	if err := runCommand(socketFile, set.Args()); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok && exit.Exited() {
+			status = exit.ExitCode()
+		} else {
+			log.Printf("Process failed: %v", err)
+			status = 1
+		}
+	}
+
 	os.Exit(status)
 }
 
-func runAgent(socketFile string, signer crypto.Signer, cmdLine []string) (int, error) {
-	key, sign, err := agent.SSHFromEd25519(signer)
-	if err != nil {
-		return 0, fmt.Errorf("Internal error: %v", err)
-	}
-	keys := map[string]agent.SSHSign{key: sign}
-
+func openSocket(socketFile string) (net.Listener, error) {
 	oldMask := syscall.Umask(0077)
-	l, err := net.Listen("unix", socketFile)
-	if err != nil {
-		return 0, fmt.Errorf("Failed to listen on UNIX socket %q: %v", socketFile, err)
-	}
-	defer l.Close()
-	defer os.Remove(socketFile)
-	syscall.Umask(oldMask)
+	defer syscall.Umask(oldMask)
 
+	return net.Listen("unix", socketFile)
+}
+
+// Accepts connections, and spawns a serving goroutine for each. Will
+// return when the listening socket is closed under its feet.
+func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
+	for {
+		c, err := socket.Accept()
+		if err != nil {
+			// Should ideally log or return the error if
+			// it's not poll.errNetClosing, but there's no
+			// good way to check for that.
+			return
+		}
+		go agent.ServeAgent(c, c, keys)
+	}
+}
+
+// Runs command, with appropriate environment variable, and waits for completion.
+func runCommand(socketFile string, cmdLine []string) error {
 	cmd := exec.Command(cmdLine[0], cmdLine[1:]...)
 	cmd.Env = append(cmd.Environ(), fmt.Sprintf("SSH_AUTH_SOCK=%s", socketFile))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("Failed to start process: %v", err)
-	}
-
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				// Should ideally log the error if
-				// it's not poll.errNetClosing, but
-				// there's no good way to check for
-				// that.
-				return
-			}
-			go agent.ServeAgent(c, c, keys)
-		}
-	}()
-
-	// Exit after the command has completed, propagate exit code.
-	if err := cmd.Wait(); err != nil {
-		return 0, fmt.Errorf("Wait failed: %v", err)
-	}
-	if cmd.ProcessState.Exited() {
-		return cmd.ProcessState.ExitCode(), nil
-	}
-
-	return 0, fmt.Errorf("Unexpected process exit: %v", cmd.ProcessState)
+	return cmd.Run()
 }

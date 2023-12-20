@@ -6,3 +6,4 @@ check:
 	./tests/sock-test
 	./tests/list-test
 	./tests/sign-test
+	./tests/status-test
