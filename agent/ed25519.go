@@ -26,7 +26,7 @@ func ed25519Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	return serializeEd25519(sig), nil
 }
 
-func SshFromEd25519(signer crypto.Signer) (string, SshSign, error) {
+func SSHFromEd25519(signer crypto.Signer) (string, SSHSign, error) {
 	publicKey := signer.Public()
 	pub, ok := publicKey.(ed25519.PublicKey)
 	if !ok {

@@ -35,7 +35,7 @@ func main() {
 	set.FlagLong(&authFile, "auth-file", 'a', "file")
 	set.FlagLong(&keyFile, "key-file", 'k', "file")
 	set.FlagLong(&socketFile, "socket-file", 's', "file")
-	set.FlagLong(&help, "help", 0, "Display help")
+	set.FlagLong(&help, "help", 'h', "Display help")
 
 	err := set.Getopt(os.Args, nil)
 
@@ -111,11 +111,11 @@ func main() {
 }
 
 func runAgent(socketFile string, signer crypto.Signer, cmdLine []string) (int, error) {
-	key, sign, err := agent.SshFromEd25519(signer)
+	key, sign, err := agent.SSHFromEd25519(signer)
 	if err != nil {
 		return 0, fmt.Errorf("Internal error: %v", err)
 	}
-	keys := map[string]agent.SshSign{key: sign}
+	keys := map[string]agent.SSHSign{key: sign}
 
 	oldMask := syscall.Umask(0077)
 	l, err := net.Listen("unix", socketFile)

@@ -19,10 +19,10 @@ const (
 
 // Returns signature formatted as an SSH signature (without outer
 // length field).
-type SshSign func([]byte) ([]byte, error)
+type SSHSign func([]byte) ([]byte, error)
 
 // The map keys are SSH public key blobs (without outer length field).
-func ServeAgent(r io.Reader, w io.Writer, keys map[string]SshSign) error {
+func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 	for {
 		data, err := readString(r, maxSize)
 		if err != nil {
