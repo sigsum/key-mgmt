@@ -15,8 +15,9 @@ import (
 	"syscall"
 
 	"github.com/pborman/getopt/v2"
-	"sigsum.org/yubihsm/agent"
-	"sigsum.org/yubihsm/hsm"
+
+	"sigsum.org/yubihsm/internal/agent"
+	"sigsum.org/yubihsm/internal/hsm"
 )
 
 func main() {
