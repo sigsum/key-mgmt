@@ -10,33 +10,35 @@ signing with the wrapped ssh-agent is shown at the bottom of this document.
 
 ## Install the YubiHSM tools
 
-### From source
+### Installing from source
 
-To install yubihsm-connector (just go install does not work):
+To install `yubihsm-connector` (just go install does not work):
 
-  git clone https://github.com/Yubico/yubihsm-connector.git
-  cd yubihsm-connector
-  make
-  install bin/yubihsm-connector ~/local/bin/  # Or desired install location
+    $ git clone https://github.com/Yubico/yubihsm-connector.git
+    $ cd yubihsm-connector
+    $ make
+    $ install bin/yubihsm-connector ~/.local/bin/  # Or desired install location
 
-And for yubihsm-shell
+And for `yubihsm-shell`:
 
-  git clone https://github.com/Yubico/yubihsm-shell.git
-  cd yubihsm-shell
-  mkdir build
-  cd build
-  cmake --install-prefix="${HOME}/local" ..
-  make
-  make install
+    $ git clone https://github.com/Yubico/yubihsm-shell.git
+    $ cd yubihsm-shell
+    $ mkdir build
+    $ cd build
+    $ cmake --install-prefix="${HOME}/.local" ..
+    $ make
+    $ make install
 
-Note that if yubihsm-shell and its associated libraries are installed
-in a non-default location, you will need to set `LD_LIBRARY_PATH` to
-point to the library installation directory, e.g., `export
-LD_LIBRARY_PATH="${HOME}/local/lib"`. Without `LD_LIBRARY_PATH`,
-yubihsm-shell fails, with error messages that confusingly don't look
-like linking problems.
+Note that if `yubihsm-shell` and its associated libraries are installed
+in a non-default location, you need to set `PATH` to include the
+directory where executables are installed (this is required for
+running our provisioning scripts). You will also need to set
+`LD_LIBRARY_PATH` to point to the library installation directory,
+e.g., `export LD_LIBRARY_PATH="${HOME}/.local/lib"`. Without
+`LD_LIBRARY_PATH`, `yubihsm-shell` fails, with error messages that
+confusingly don't look like linking problems.
 
-### Binary package install
+### Installing Yubico's binary packages
 
 Locate a release for your system's distribution on Yubico's [YubiHSM page][].
 
