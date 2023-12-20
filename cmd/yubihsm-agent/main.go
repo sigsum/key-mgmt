@@ -65,7 +65,7 @@ use on stdin, initd/systemd style.
 	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
 	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
 	set.FlagLong(&keyFile, "key-file", 'k', "private key file")
-	set.FlagLong(&socketFile, "socket-file", 's', "name of unix socket")
+	set.FlagLong(&socketFile, "socket-name", 's', "name of unix socket")
 	set.FlagLong(&help, "help", 'h', "Display help")
 
 	err := set.Getopt(os.Args, nil)
