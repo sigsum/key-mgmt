@@ -21,6 +21,35 @@ import (
 )
 
 func main() {
+	const usage = `
+Start an ssh-agent that acts as an ed25519 signing oracle.
+
+It can use either an unencrypted private key, on openssh format, or a
+private key managed by a yubihsm2 device. To use an unencrypted
+private key, pass the -k option with the name of the private key file.
+To use a yubihsm key, you need to specify both an authorization file
+(-a option) and key id (-i option). The contents of the authorization
+file is a single line with the the authorization id (decimal number),
+and the corresponding passphrase, separated by a single ':' character.
+
+When using a yubihsm key, the agent needs a separate yubihsm-connector
+process to be run running. By default, the connector is expected to
+listen on port 12345 on localhost, but this can be changed with the -c
+option.
+
+The agent listens for connections on a unix socket. By default, a
+random name is selected under /tmp, but it can also be set explicitly
+using the -s option (it is an error if the name is already used in the
+file system).
+
+The remaining command line arguments are the command and it's
+arguments to be spawned by the agent. The environment variable
+SSH_AUTH_SOCK is set with the name of the unix socket. The agent keeps
+running and accepting connections until that process exits.
+
+TODO: Add a mode to run without a command. Add a way to take socket to
+use on stdin, initd/systemd style.
+`
 	// Default connector url
 	connector := "localhost:12345"
 	keyId := -1
@@ -31,18 +60,20 @@ func main() {
 
 	set := getopt.New()
 	set.SetParameters("cmd ...")
+	set.SetUsage(func() { fmt.Print(usage) })
 	set.FlagLong(&connector, "connector", 'c', "host:port")
-	set.FlagLong(&keyId, "key-id", 'i', "id")
-	set.FlagLong(&authFile, "auth-file", 'a', "file")
-	set.FlagLong(&keyFile, "key-file", 'k', "file")
-	set.FlagLong(&socketFile, "socket-file", 's', "file")
+	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
+	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
+	set.FlagLong(&keyFile, "key-file", 'k', "private key file")
+	set.FlagLong(&socketFile, "socket-file", 's', "name of unix socket")
 	set.FlagLong(&help, "help", 'h', "Display help")
 
 	err := set.Getopt(os.Args, nil)
 
 	// Check help first; if seen, ignore errors about missing mandatory arguments.
-	if help {
+	if help || set.NArgs() < 1 {
 		set.PrintUsage(os.Stdout)
+		fmt.Print(usage)
 		os.Exit(0)
 	}
 
@@ -50,10 +81,6 @@ func main() {
 		log.Printf("err: %v\n", err)
 		set.PrintUsage(log.Writer())
 		os.Exit(1)
-	}
-
-	if set.NArgs() < 1 {
-		log.Fatal("Too few arguments.")
 	}
 
 	if (keyId < 0 && len(keyFile) == 0) || (keyId >= 0 && len(keyFile) > 0) {
