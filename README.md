@@ -8,13 +8,41 @@ The detailed documentation for our key management strategy is available in a
 [separate document](./docs/key-management.md).  A demo of provisioning and then
 signing with the wrapped ssh-agent is shown at the bottom of this document.
 
-## Install the YubiHSM toolchain
+## Install the YubiHSM tools
+
+### Installing from source
+
+To install `yubihsm-connector` (just go install does not work):
+
+    $ git clone https://github.com/Yubico/yubihsm-connector.git
+    $ cd yubihsm-connector
+    $ make
+    $ install bin/yubihsm-connector ~/.local/bin/  # Or desired install location
+
+And for `yubihsm-shell`:
+
+    $ git clone https://github.com/Yubico/yubihsm-shell.git
+    $ cd yubihsm-shell
+    $ mkdir build
+    $ cd build
+    $ cmake --install-prefix="${HOME}/.local" ..
+    $ make
+    $ make install
+
+Note that if `yubihsm-shell` and its associated libraries are installed
+in a non-default location, you need to set `PATH` to include the
+directory where executables are installed (this is required for
+running our provisioning scripts). You will also need to set
+`LD_LIBRARY_PATH` to point to the library installation directory,
+e.g., `export LD_LIBRARY_PATH="${HOME}/.local/lib"`. Without
+`LD_LIBRARY_PATH`, `yubihsm-shell` fails, with error messages that
+confusingly don't look like linking problems.
+
+### Installing Yubico's binary packages
 
 Locate a release for your system's distribution on Yubico's [YubiHSM page][].
 
 [YubiHSM page]: https://developers.yubico.com/YubiHSM2/Releases/
-
-### Debian
 
 Example after downloading and verifying the signature for a Debian 12 release:
 
@@ -24,6 +52,8 @@ Example after downloading and verifying the signature for a Debian 12 release:
 
 The above installs commands like `yubihsm-shell` and `yubihsm-connector`.  Undo
 the install with `dpkg -r PKGNAME`, followed by `userdel yubihsm-connector`.
+
+### Add udev configuration
 
 Add a udev rule to grant your user access to communicate with YubiHSMs.  For
 example, copy-paste the following into `/etc/udev/rules.d/50-yubihsm2.rules`:
