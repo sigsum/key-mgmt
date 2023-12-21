@@ -22,7 +22,17 @@ import (
 
 const sshAgentEnv = "SSH_AUTH_SOCK"
 
+// Since we need to call os.Exit to pass an exit code, we need a
+// simple main function without any defer.
 func main() {
+	status, err := mainWithStatus()
+	if err != nil {
+		log.Fatal(err)
+	}
+	os.Exit(status)
+}
+
+func mainWithStatus() (int, error) {
 	const usage = `
 Start an ssh-agent that acts as an ed25519 signing oracle.
 
@@ -75,30 +85,30 @@ use on stdin, initd/systemd style.
 	if err != nil {
 		log.Printf("err: %v\n", err)
 		set.PrintUsage(log.Writer())
-		os.Exit(1)
+		return 1, nil
 	}
 
 	if help {
 		set.PrintUsage(os.Stdout)
 		fmt.Print(usage)
-		os.Exit(0)
+		return 0, nil
 	}
 
 	if (keyId < 0 && len(keyFile) == 0) || (keyId >= 0 && len(keyFile) > 0) {
-		log.Fatal("Exactly one of the --key-id and --key-file options must be provided.")
+		return 0, fmt.Errorf("Exactly one of the --key-id and --key-file options must be provided.")
 	}
 	if keyId >= 0 && len(authFile) == 0 {
-		log.Fatal("The --auth-file option is required with --key-id.")
+		return 0, fmt.Errorf("The --auth-file option is required with --key-id.")
 	}
 
 	if len(socketFile) == 0 {
 		r := make([]byte, 8)
 		if _, err := rand.Read(r); err != nil {
-			log.Fatalf("rand.Read failed: %v", err)
+			return 0, fmt.Errorf("rand.Read failed: %v", err)
 		}
 		socketFile = filepath.Join(os.TempDir(), fmt.Sprintf("agent-sock-%x", r))
 	} else if err := os.Remove(socketFile); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Fatalf("removing file %q failed: %v", socketFile, err)
+		return 0, fmt.Errorf("removing file %q failed: %v", socketFile, err)
 	}
 
 	var signer crypto.Signer
@@ -106,58 +116,54 @@ use on stdin, initd/systemd style.
 		var err error
 		signer, err = agent.ReadPrivateKeyFile(keyFile)
 		if err != nil {
-			log.Fatalf("Reading private key file %q failed: %v", keyFile, err)
+			return 0, fmt.Errorf("Reading private key file %q failed: %v", keyFile, err)
 		}
 	} else {
 		if keyId >= 0x10000 {
-			log.Fatalf("Key id %d out of range.", keyId)
+			return 0, fmt.Errorf("Key id %d out of range.", keyId)
 		}
 		buf, err := os.ReadFile(authFile)
 		if err != nil {
-			log.Fatalf("Reading auth file %q failed: %v", authFile, err)
+			return 0, fmt.Errorf("Reading auth file %q failed: %v", authFile, err)
 		}
 		buf = bytes.TrimSpace(buf)
 		colon := bytes.Index(buf, []byte{':'})
 		if colon < 0 {
-			log.Fatalf("Invalid auth file %q, missing ':'", authFile)
+			return 0, fmt.Errorf("Invalid auth file %q, missing ':'", authFile)
 		}
 		authId, err := strconv.ParseUint(string(buf[:colon]), 10, 16)
 		if err != nil {
-			log.Fatalf("Invalid auth id in file %q: %v", authFile, err)
+			return 0, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
 		}
 		authPassword := string(buf[colon+1:])
-		signer, err = hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+		hsmSigner, err := hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
 		if err != nil {
-			log.Fatalf("Connecting to hsm failed: %v", err)
+			return 0, fmt.Errorf("Connecting to hsm failed: %v", err)
 		}
+		defer hsmSigner.Close()
+		signer = hsmSigner
 	}
 
 	sshKey, sshSign, err := agent.SSHFromEd25519(signer)
 	if err != nil {
-		log.Fatalf("Internal error: %v", err)
+		return 0, fmt.Errorf("Internal error: %v", err)
 	}
 	keys := map[string]agent.SSHSign{sshKey: sshSign}
 
 	socket, err := openSocket(socketFile)
 	if err != nil {
-		log.Fatalf("Failed to listen on UNIX socket %q: %v", socketFile, err)
+		return 0, fmt.Errorf("Failed to listen on UNIX socket %q: %v", socketFile, err)
 	}
 	defer socket.Close()
 	defer os.Remove(socketFile)
 
 	go runAgent(socket, keys)
 
-	status := 0
-	if err := runCommand(socketFile, set.Args()); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok && exit.Exited() {
-			status = exit.ExitCode()
-		} else {
-			log.Printf("Process failed: %v", err)
-			status = 1
-		}
+	err = runCommand(socketFile, set.Args())
+	if exit, ok := err.(*exec.ExitError); ok && exit.Exited() {
+		return exit.ExitCode(), nil
 	}
-
-	os.Exit(status)
+	return 0, err
 }
 
 func openSocket(socketFile string) (net.Listener, error) {
