@@ -7,3 +7,4 @@ check:
 	./tests/list-test
 	./tests/sign-test
 	./tests/status-test
+	./tests/daemon-test

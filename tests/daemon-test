@@ -1,0 +1,26 @@
+#! /bin/sh
+
+set -e
+
+cd "$(dirname $0)"
+
+rm -f tmp.*
+
+cleanup() {
+    pid=$(cat tmp.pid 2>/dev/null) || return 0
+    kill -HUP ${pid}
+}
+
+trap cleanup EXIT
+
+ssh-keygen -q -N '' -t ed25519 -f tmp.key
+
+go build -o tmp.agent ../cmd/yubihsm-agent
+sock=$(./tmp.agent -s ./tmp.socket -k tmp.key --pid-file tmp.pid & )
+
+SSH_AUTH_SOCK="${sock}" ssh-add -L > tmp.pub
+grep '^ssh-ed25519 .* oracle key$' tmp.pub >/dev/null
+
+echo foo > tmp.msg
+SSH_AUTH_SOCK="${sock}" ssh-keygen -q -Y sign -n ns -f tmp.pub tmp.msg
+ssh-keygen -q -Y check-novalidate -n ns -f tmp.pub -s tmp.msg.sig < tmp.msg

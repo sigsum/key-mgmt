@@ -8,7 +8,7 @@ rm -f tmp.*
 ssh-keygen -q -N '' -t ed25519 -f tmp.key
 
 # Can't use go run, since that tool doesn't propagate the exit code.
-go build -o tmp.agent ../cmd/yubihsm-agent 
+go build -o tmp.agent ../cmd/yubihsm-agent
 res=0
 ./tmp.agent -s ./tmp.socket -k tmp.key sh -c 'exit 7' || res=$?
 

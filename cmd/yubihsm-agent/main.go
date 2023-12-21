@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -54,31 +55,37 @@ random name is selected under /tmp, but it can also be set explicitly
 using the -s option (it is an error if the name is already used in the
 file system).
 
-The next command line argument is the command that the agent should
-spawn. The remaining command line arguments are the arguments to pass
-to the command. The environment variable SSH_AUTH_SOCK is set to the
-name of the unix socket that the agent listens on. The agent keeps
-running and accepting connections until the command process exits.
+The first non-option argument, if any, is a command that the agent
+should spawn. The remaining command line arguments are the arguments
+to pass to the command. The environment variable SSH_AUTH_SOCK is set
+to the name of the unix socket that the agent listens on. The agent
+keeps running and accepting connections until the command process
+exits, and its exit code is propagated.
 
-TODO: Add a mode to run without a command. Add a way to take socket to
-use on stdin, initd/systemd style.
+If no command is provided, the agent prints the name of its socket to
+stdout, and then accepts sockets indefinitely. The HUP signal makes
+the agent cleanup and exit.
+
+TODO: Add a way to take socket to use on stdin, initd/systemd style.
 `
 	// Default connector url
 	connector := "localhost:12345"
 	keyId := -1
 	authFile := ""
 	keyFile := ""
-	socketFile := ""
+	socketName := ""
+	pidFile := ""
 	help := false
 
 	set := getopt.New()
-	set.SetParameters("cmd ...")
+	set.SetParameters("[cmd ...]")
 	set.SetUsage(func() { fmt.Print(usage) })
 	set.FlagLong(&connector, "connector", 'c', "host:port")
 	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
 	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
 	set.FlagLong(&keyFile, "key-file", 'k', "private key file")
-	set.FlagLong(&socketFile, "socket-name", 's', "name of unix socket")
+	set.FlagLong(&socketName, "socket-name", 's', "name of unix socket")
+	set.FlagLong(&pidFile, "pid-file", 0, "for for storing agent's pid")
 	set.FlagLong(&help, "help", 'h', "Display help")
 
 	err := set.Getopt(os.Args, nil)
@@ -101,14 +108,14 @@ use on stdin, initd/systemd style.
 		return 0, fmt.Errorf("The --auth-file option is required with --key-id.")
 	}
 
-	if len(socketFile) == 0 {
+	if len(socketName) == 0 {
 		r := make([]byte, 8)
 		if _, err := rand.Read(r); err != nil {
 			return 0, fmt.Errorf("rand.Read failed: %v", err)
 		}
-		socketFile = filepath.Join(os.TempDir(), fmt.Sprintf("agent-sock-%x", r))
-	} else if err := os.Remove(socketFile); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return 0, fmt.Errorf("removing file %q failed: %v", socketFile, err)
+		socketName = filepath.Join(os.TempDir(), fmt.Sprintf("agent-sock-%x", r))
+	} else if err := os.Remove(socketName); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return 0, fmt.Errorf("removing file %q failed: %v", socketName, err)
 	}
 
 	var signer crypto.Signer
@@ -150,27 +157,53 @@ use on stdin, initd/systemd style.
 	}
 	keys := map[string]agent.SSHSign{sshKey: sshSign}
 
-	socket, err := openSocket(socketFile)
+	socket, err := openSocket(socketName)
 	if err != nil {
-		return 0, fmt.Errorf("Failed to listen on UNIX socket %q: %v", socketFile, err)
+		return 0, fmt.Errorf("Failed to listen on UNIX socket %q: %v", socketName, err)
 	}
 	defer socket.Close()
-	defer os.Remove(socketFile)
+	defer os.Remove(socketName)
 
-	go runAgent(socket, keys)
-
-	err = runCommand(socketFile, set.Args())
-	if exit, ok := err.(*exec.ExitError); ok && exit.Exited() {
-		return exit.ExitCode(), nil
+	if len(pidFile) > 0 {
+		pid := fmt.Sprintf("%d\n", os.Getpid())
+		if err := os.WriteFile(pidFile, []byte(pid), 0660); err != nil {
+			return 0, fmt.Errorf("failed creating pid file: %v", err)
+		}
+		defer os.Remove(pidFile)
 	}
-	return 0, err
+
+	if len(set.Args()) > 0 {
+		go runAgent(socket, keys)
+
+		err = runCommand(socketName, set.Args())
+		if exit, ok := err.(*exec.ExitError); ok && exit.Exited() {
+			return exit.ExitCode(), nil
+		}
+		return 0, err
+	}
+	fmt.Printf("%s\n", socketName)
+	// We're not going to write anything more to stdout, and
+	// closing signals EOF to anyone reading stdout. EOF also
+	// means we're listening on the socket.
+	os.Stdout.Close()
+
+	// On SIGHUP signal, close the socket, forcing runAgent to
+	// return, and hence we cleanup and exit.
+	go func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGHUP)
+		<-ch
+		socket.Close()
+	}()
+	runAgent(socket, keys)
+	return 0, nil
 }
 
-func openSocket(socketFile string) (net.Listener, error) {
+func openSocket(socketName string) (net.Listener, error) {
 	oldMask := syscall.Umask(0077)
 	defer syscall.Umask(oldMask)
 
-	return net.Listen("unix", socketFile)
+	return net.Listen("unix", socketName)
 }
 
 // Accepts connections, and spawns a serving goroutine for each. Will
@@ -189,9 +222,9 @@ func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
 }
 
 // Runs command, with appropriate environment variable, and waits for completion.
-func runCommand(socketFile string, cmdLine []string) error {
+func runCommand(socketName string, cmdLine []string) error {
 	cmd := exec.Command(cmdLine[0], cmdLine[1:]...)
-	cmd.Env = append(cmd.Environ(), fmt.Sprintf("SSH_AUTH_SOCK=%s", socketFile))
+	cmd.Env = append(cmd.Environ(), fmt.Sprintf("SSH_AUTH_SOCK=%s", socketName))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
