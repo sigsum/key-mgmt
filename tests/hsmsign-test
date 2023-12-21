@@ -1,0 +1,61 @@
+#!/bin/bash
+
+#
+# A test that generates a signing key on a YubiHSM, signs a message using
+# yubihsm-agent, verifies the message, and then deletes the signing key.
+#
+# Note: a factory-reset YubiHSM needs to be plugged in before running this test.
+# If all goes well, the YubiHSM will still be in a factory-reset state on exit.
+#
+
+set -eu
+trap clean_up EXIT
+
+cd "$(dirname "$0")"
+rm -f tmp.*
+
+yubihsm-connector >/dev/null 2>&1 &
+pid=$!
+function clean_up() {
+	kill "$pid" >/dev/null 2>&1
+}
+
+function yubihsm_shell() {
+	cat | yubihsm-shell >tmp.out 2>&1
+
+	error=$(grep -e "Failed to" -e "Invalid argument" tmp.out || true)
+	if [[ -n "$error" ]]; then
+		cat tmp.out
+		exit 1
+	fi
+}
+
+yubihsm_shell << EOF
+	connect
+	session open 1 password
+	generate asymmetric 0 123 "Test Ed25519 signing key" all sign-eddsa ed25519
+	session close 0
+EOF
+
+echo "[PASS] Generate YubiHSM test key"
+
+go run ../cmd/yubihsm-agent/main.go -i 123 -a <(echo "1:password") /bin/sh <<EOF
+   ssh-add -L > tmp.pub
+   echo foo > tmp.msg
+   ssh-keygen -q -Y sign -n ns -f tmp.pub tmp.msg
+EOF
+
+echo "[PASS] Sign message"
+
+ssh-keygen -q -Y check-novalidate -n ns -f tmp.pub -s tmp.msg.sig < tmp.msg
+
+echo "[PASS] Verify message"
+
+yubihsm_shell << EOF
+    connect
+    session open 1 password
+    delete 0 123 asymmetric-key
+	session close 0
+EOF
+
+echo "[PASS] Delete YubiHSM test key"
