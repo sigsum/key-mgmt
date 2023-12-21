@@ -125,17 +125,19 @@ use on stdin, initd/systemd style.
 			log.Fatalf("Invalid auth id in file %q: %v", authFile, err)
 		}
 		authPassword := string(buf[colon+1:])
-		signer, err = hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+		yubihsm, err := hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
 		if err != nil {
 			log.Fatalf("Connecting to hsm failed: %v", err)
 		}
+		defer yubihsm.Close()
+		signer = yubihsm
 	}
 
-	status, err := runAgent(socketFile, signer, set.Args())
+	_, err = runAgent(socketFile, signer, set.Args())
 	if err != nil {
 		log.Fatalf("Terminating: %v", err)
 	}
-	os.Exit(status)
+	//os.Exit(status) // TODO: don't die, then deferred yubihsm.Close() doesn't seem to work
 }
 
 func runAgent(socketFile string, signer crypto.Signer, cmdLine []string) (int, error) {
