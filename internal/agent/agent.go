@@ -51,6 +51,9 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 			return fmt.Errorf("invalid empty agent message")
 		}
 		t, msg := data[0], data[1:]
+		// The write methods on bytes.Buffer are documented to
+		// always return a nil error. Therefore all related
+		// error return values below are ignored.
 		var rsp bytes.Buffer
 		switch t {
 		case SSH_AGENTC_REQUEST_IDENTITIES:
@@ -58,20 +61,12 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 				return fmt.Errorf("invalid message, %d left-over bytes in list request", len(msg))
 			}
 
-			if err := rsp.WriteByte(SSH_AGENT_IDENTITIES_ANSWER); err != nil {
-				return err
-			}
-			if err := writeUint32(&rsp, uint32(len(keys))); err != nil {
-				return err
-			}
+			rsp.WriteByte(SSH_AGENT_IDENTITIES_ANSWER)
+			writeUint32(&rsp, uint32(len(keys)))
 			for k, _ := range keys {
-				if err := writeString(&rsp, k); err != nil {
-					return err
-				}
+				writeString(&rsp, k)
 				// Arbitrary comment
-				if err := writeString(&rsp, "oracle key"); err != nil {
-					return err
-				}
+				writeString(&rsp, "oracle key")
 			}
 		case SSH_AGENTC_SIGN_REQUEST:
 			req, err := parseBytes(msg, nil, readSignRequest)
@@ -80,29 +75,19 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 			}
 			signer, ok := keys[string(req.pubKey)]
 			if !ok {
-				if err := rsp.WriteByte(SSH_AGENT_FAILURE); err != nil {
-					return err
-				}
+				rsp.WriteByte(SSH_AGENT_FAILURE)
 				break
 			}
 			sig, err := signer(req.data)
 			if err != nil {
 				log.Printf("signing failed: %v", err)
-				if err := rsp.WriteByte(SSH_AGENT_FAILURE); err != nil {
-					return err
-				}
+				rsp.WriteByte(SSH_AGENT_FAILURE)
 				break
 			}
-			if err := rsp.WriteByte(SSH_AGENT_SIGN_RESPONSE); err != nil {
-				return err
-			}
-			if err := writeString(&rsp, sig); err != nil {
-				return err
-			}
+			rsp.WriteByte(SSH_AGENT_SIGN_RESPONSE)
+			writeString(&rsp, sig)
 		default:
-			if err := rsp.WriteByte(SSH_AGENT_FAILURE); err != nil {
-				return err
-			}
+			rsp.WriteByte(SSH_AGENT_FAILURE)
 		}
 		if err := writeString(w, rsp.Bytes()); err != nil {
 			return err
