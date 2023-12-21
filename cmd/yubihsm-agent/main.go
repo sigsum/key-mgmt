@@ -26,7 +26,7 @@ func main() {
 	const usage = `
 Start an ssh-agent that acts as an ed25519 signing oracle.
 
-It can use either an unencrypted private key, on openssh format, or a
+It can use either an unencrypted private key, in openssh format, or a
 private key managed by a yubihsm2 device. To use an unencrypted
 private key, pass the -k option with the name of the private key file.
 To use a yubihsm key, you need to specify both an authorization file
@@ -36,18 +36,19 @@ and the corresponding passphrase, separated by a single ':' character.
 
 When using a yubihsm key, the agent needs a separate yubihsm-connector
 process to be run running. By default, the connector is expected to
-listen on port 12345 on localhost, but this can be changed with the -c
-option.
+listen on TCP port 12345 on localhost, but this can be changed with
+the -c option.
 
 The agent listens for connections on a unix socket. By default, a
 random name is selected under /tmp, but it can also be set explicitly
 using the -s option (it is an error if the name is already used in the
 file system).
 
-The remaining command line arguments are the command and it's
-arguments to be spawned by the agent. The environment variable
-SSH_AUTH_SOCK is set with the name of the unix socket. The agent keeps
-running and accepting connections until that process exits.
+The next command line argument is the command that the agent should
+spawn. The remaining command line arguments are the arguments to pass
+to the command. The environment variable SSH_AUTH_SOCK is set to the
+name of the unix socket that the agent listens on. The agent keeps
+running and accepting connections until the command process exits.
 
 TODO: Add a mode to run without a command. Add a way to take socket to
 use on stdin, initd/systemd style.
