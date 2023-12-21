@@ -1,0 +1,27 @@
+image: docker.io/library/golang:1.19
+
+stages:
+- build
+- unittest
+- test
+
+build-go:
+  stage: build
+  script: go build ./...
+
+test-go:
+  stage: unittest
+  script: go test ./...
+
+test-agent:
+  stage: test
+  script: make check
+  artifacts:
+    when: always
+    paths:
+    - tests/tmp.*
+
+# Succeeds if no changes are suggested by gofmt -d .
+gofmt:
+  stage: test
+  script: if gofmt -d . | grep . ; then false ; else true ; fi

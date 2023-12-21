@@ -1,0 +1,13 @@
+#! /bin/sh
+
+set -e
+
+cd "$(dirname $0)"
+
+rm -f tmp.*
+ssh-keygen -q -N '' -t ed25519 -f tmp.key
+
+go run ../cmd/yubihsm-agent -s ./tmp.socket -k tmp.key \
+   ssh-add -L > tmp.out
+
+grep '^ssh-ed25519 .* oracle key$' tmp.out >/dev/null
