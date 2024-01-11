@@ -1,9 +1,9 @@
-Authors of YubiHSM
+Authors of key-mgmt
 
-The copyright on the YubiHSM implementation is held by the respective
+The copyright on the key-mgmt implementation is held by the respective
 authors (or their organizations/employers).
 
-Unless file-specific copyright headers say otherwise, YubiHSM is
+Unless file-specific copyright headers say otherwise, key-mgmt is
 permissively licensed according to the BSD 2-Clause License (see the
 LICENSE file).
 
@@ -11,7 +11,7 @@ This file contains only a summary; for more fine-grained information on
 who authored a particular file or feature, please refer to the version
 control history at:
 
-  https://git.glasklar.is/sigsum/core/yubihsm
+  https://git.glasklar.is/sigsum/core/key-mgmt
 
 For contributions where copyrights are held by an organization, e.g.,
 the author's employer, the copyright holder should be identified by the

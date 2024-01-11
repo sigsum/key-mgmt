@@ -17,8 +17,8 @@ import (
 
 	"github.com/pborman/getopt/v2"
 
-	"sigsum.org/yubihsm/internal/agent"
-	"sigsum.org/yubihsm/internal/hsm"
+	"sigsum.org/key-mgmt/internal/agent"
+	"sigsum.org/key-mgmt/internal/hsm"
 )
 
 const sshAgentEnv = "SSH_AUTH_SOCK"
