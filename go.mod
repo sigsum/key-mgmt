@@ -1,4 +1,4 @@
-module sigsum.org/yubihsm
+module sigsum.org/key-mgmt
 
 go 1.19
 

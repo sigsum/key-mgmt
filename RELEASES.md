@@ -15,10 +15,10 @@ Note that a release is simply a git-tag specified on our mailing list.  There
 may be intermediate git-tags between two advertised releases.  These
 intermediate tags are **not** released and supported.
 
-The yubihsm Go module only contains internal libraries.  By the terms of the
+The key-mgmt Go module only contains internal libraries.  By the terms of the
 LICENSE file you are free to use this code "as is" in almost any way you like.
-However, we support its use **only** via the `yubihsm-agent` program.  We don't
-aim to provide any backwards compatibility for internal interfaces.
+However, we support its use **only** via the `yubihsm-agent` program for now.
+We don't aim to provide any backwards compatibility for internal interfaces.
 
 We encourage use of the key management strategy described in this repository,
 including use of the released scripts for provisioning and `yubihsm-agent` to
@@ -44,6 +44,7 @@ complications that are caused by changed command-line flags or similar will be
 outlined clearly in the [NEWS files](./NEWS).  Pay close attention to the
 "Breaking changes" section for these migration notes (if any).
 
-## Expected changes
+## Planned changes
 
-  - None, expect for bug-fixes and minor clean-up or feature requests
+  - Make formats related to SSH private keys and signatures available as
+    importable Go packages (rather than keeping them in `/internal`).
