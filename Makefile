@@ -8,3 +8,4 @@ check:
 	./tests/sign-test
 	./tests/status-test
 	./tests/daemon-test
+	./tests/inetd-test

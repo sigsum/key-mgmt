@@ -108,16 +108,43 @@ TODO: Add a way to take socket to use on stdin, initd/systemd style.
 		return 0, fmt.Errorf("The --auth-file option is required with --key-id.")
 	}
 
-	if len(socketName) == 0 {
-		r := make([]byte, 8)
-		if _, err := rand.Read(r); err != nil {
-			return 0, fmt.Errorf("rand.Read failed: %v", err)
-		}
-		socketName = filepath.Join(os.TempDir(), fmt.Sprintf("agent-sock-%x", r))
-	} else if err := os.Remove(socketName); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return 0, fmt.Errorf("removing file %q failed: %v", socketName, err)
+	// Did we get a listening socket from inetd/systemd ?
+	socket, err := inetdSocket(os.Stdin)
+	if err != nil {
+		return 0, err
 	}
+	if socket != nil {
+		defer socket.Close()
+		if len(socketName) > 0 {
+			return 0, fmt.Errorf("started from inetd / systemd, using --socket-name is invalid")
+		}
+		if len(set.Args()) > 0 {
+			return 0, fmt.Errorf("started from inetd / systemd, specifying command to run is invalid")
+		}
+		// The net.FileListener function dups the socket, we
+		// want only a single fd so that socket.Close() really
+		// closes the underlying socket.
+		os.Stdin.Close()
 
+	} else {
+		if len(socketName) == 0 {
+			r := make([]byte, 8)
+			if _, err := rand.Read(r); err != nil {
+				return 0, fmt.Errorf("rand.Read failed: %v", err)
+			}
+			socketName = filepath.Join(os.TempDir(), fmt.Sprintf("agent-sock-%x", r))
+		} else if err := os.Remove(socketName); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return 0, fmt.Errorf("removing file %q failed: %v", socketName, err)
+		}
+		socket, err = openSocket(socketName)
+		if err != nil {
+			return 0, fmt.Errorf("Failed to listen on UNIX socket %q: %v", socketName, err)
+		}
+		defer socket.Close()
+		defer os.Remove(socketName)
+
+		fmt.Printf("%s\n", socketName)
+	}
 	var signer crypto.Signer
 	if len(keyFile) > 0 {
 		var err error
@@ -157,13 +184,6 @@ TODO: Add a way to take socket to use on stdin, initd/systemd style.
 	}
 	keys := map[string]agent.SSHSign{sshKey: sshSign}
 
-	socket, err := openSocket(socketName)
-	if err != nil {
-		return 0, fmt.Errorf("Failed to listen on UNIX socket %q: %v", socketName, err)
-	}
-	defer socket.Close()
-	defer os.Remove(socketName)
-
 	if len(pidFile) > 0 {
 		pid := fmt.Sprintf("%d\n", os.Getpid())
 		if err := os.WriteFile(pidFile, []byte(pid), 0660); err != nil {
@@ -181,7 +201,6 @@ TODO: Add a way to take socket to use on stdin, initd/systemd style.
 		}
 		return 0, err
 	}
-	fmt.Printf("%s\n", socketName)
 	// We're not going to write anything more to stdout, and
 	// closing signals EOF to anyone reading stdout. EOF also
 	// means we're listening on the socket.
@@ -197,6 +216,15 @@ TODO: Add a way to take socket to use on stdin, initd/systemd style.
 	}()
 	runAgent(socket, keys)
 	return 0, nil
+}
+
+// If the file isn't a listening socket, returns nil listener, no error.
+func inetdSocket(f *os.File) (net.Listener, error) {
+	acceptConn, err := syscall.GetsockoptInt(int(f.Fd()), syscall.SOL_SOCKET, syscall.SO_ACCEPTCONN)
+	if err != nil || acceptConn == 0 {
+		return nil, nil
+	}
+	return net.FileListener(f)
 }
 
 func openSocket(socketName string) (net.Listener, error) {
