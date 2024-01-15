@@ -89,7 +89,7 @@ versions of Go in your distribution, e.g., `apt install golang-1.19` on Debian.
 
 Install `yubihsm-agent`:
 
-    $ go install sigsum.org/yubihsm/cmd/yubihsm-agent...To Be Added.
+    $ go install sigsum.org/key-mgmt/cmd/yubihsm-agent@v0.1.0
 
 [Go's toolchain]: https://go.dev/doc/install
 
@@ -248,10 +248,26 @@ witnesses are not operated by the same day-to-day operations team.
 ### Try signing using yubihsm-agent
 
 The `yubihsm-agent` program is a tiny ssh-agent daemon that computes Ed25519
-signatures by interacting with the `yubihsm-connector` protocol on localhost.
+signatures by interacting with the `yubihsm-connector` protocol on localhost. To
+use a key, you need an "auth-file" containing the auth-id (decimal number) and
+the corresponding passphrase, separated be a `:` character, and the key-id.
+E.g., with the default configuration of these provisioning scripts, a log server
+key uses auth-id 200 and key-id 500, while a witness key uses auth-id 300 and
+key-id 600. An auth-file for the log server can be created using
 
-Test that valid signatures are created for all log server and witness YubiHSMs:
+    $ (umask 077 && echo 200:SECRET-PASSPHRASE > log-auth)
 
-    $ To Be Added.
+To sign a test message using a log server key, you can then run
+
+    $ yubihsm-connector &
+    $ yubihsm-agent -a log-auth -i 500 ssh-add -L > key.pub
+    $ echo "test message" > msg
+    $ yubihsm-agent -a log-auth -i 500 ssh-keygen -q -Y sign -n test-namespace -f key.pub msg
+
+The signature can be verified using
+
+    $ ssh-keygen -q -Y check-novalidate -n test-namespace -f key.pub -s msg.sig < msg
+
+See `yubihsm-agent --help` for details on the agent's options.
 
 **Note:** does not need to happen on the provisioning machine.
