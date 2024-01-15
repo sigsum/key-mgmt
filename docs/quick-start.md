@@ -253,18 +253,20 @@ use a key, you need an "auth-file" containing the auth-id (decimal number) and
 the corresponding passphrase, separated be a `:` character, and the key-id.
 E.g., with the default configuration of these provisioning scripts, a log server
 key uses auth-id 200 and key-id 500, while a witness key uses auth-id 300 and
-key-id 600.
+key-id 600. An auth-file for the log server can be created using
 
-To sign a test message using a log server key, you can run
+    $ (umask 077 && echo 200:SECRET-PASSPHRASE > log-auth)
 
-  $ (umask 077 && echo 200:SECRET-PASSPHRASE > log-auth)
-  $ yubihsm-agent -a log-auth -i 500 ssh-add -L > key.pub
-  $ echo "test message" > msg
-  $ yubihsm-agent -a log-auth -i 500 ssh-keygen -q -Y sign -n test-namespace -f key.pub msg
+To sign a test message using a log server key, you can then run
+
+    $ yubihsm-connector &
+    $ yubihsm-agent -a log-auth -i 500 ssh-add -L > key.pub
+    $ echo "test message" > msg
+    $ yubihsm-agent -a log-auth -i 500 ssh-keygen -q -Y sign -n test-namespace -f key.pub msg
 
 The signature can be verified using
 
-  $ ssh-keygen -q -Y check-novalidate -n test-namespace -f key.pub -s msg.sig < msg
+    $ ssh-keygen -q -Y check-novalidate -n test-namespace -f key.pub -s msg.sig < msg
 
 See `yubihsm-agent --help` for details on the agent's options.
 
