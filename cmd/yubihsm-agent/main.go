@@ -52,8 +52,16 @@ the -c option.
 
 The agent listens for connections on a unix socket. By default, a
 random name is selected under /tmp, but it can also be set explicitly
-using the -s option (it is an error if the name is already used in the
-file system).
+using the -s option (any existing file or socket with that name is
+deleted). The permissions are set so that the socket can be accessed
+only by processes of the user that is running the agent.
+
+Alternatively, the parent process can provide the socket. If fd 0
+(stdin) is a socket in the listen state, the agent will accept
+connections on this socket. This convention is supported by systemd
+(referred to as "socket activation") as well as by inetd (where it is
+called a stream "wait" service). In this mode, it is not possible to
+provide a command to execute, or specify a socket name with -s.
 
 The first non-option argument, if any, is a command that the agent
 should spawn. The remaining command line arguments are the arguments
@@ -63,10 +71,8 @@ keeps running and accepting connections until the command process
 exits, and its exit code is propagated.
 
 If no command is provided, the agent prints the name of its socket to
-stdout, and then accepts sockets indefinitely. The HUP signal makes
-the agent cleanup and exit.
-
-TODO: Add a way to take socket to use on stdin, initd/systemd style.
+stdout, and then accepts connections indefinitely. The HUP
+signal makes the agent cleanup and exit.
 `
 	// Default connector url
 	connector := "localhost:12345"
