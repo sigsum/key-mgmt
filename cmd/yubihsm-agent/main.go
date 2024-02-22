@@ -51,10 +51,11 @@ listen on TCP port 12345 on localhost, but this can be changed with
 the -c option.
 
 The agent listens for connections on a unix socket. By default, a
-random name is selected under /tmp, but it can also be set explicitly
-using the -s option (any existing file or socket with that name is
-deleted). The permissions are set so that the socket can be accessed
-only by processes of the user that is running the agent.
+random name is selected under /tmp (or ${TMPDIR}, if set), but it can
+also be set explicitly using the -s option (any existing file or
+socket with that name is deleted). The permissions are set so that the
+socket can be accessed only by processes of the user that is running
+the agent.
 
 Alternatively, the parent process can provide the socket. If fd 0
 (stdin) is a socket in the listen state, the agent will accept
@@ -70,9 +71,11 @@ to the name of the unix socket that the agent listens on. The agent
 keeps running and accepting connections until the command process
 exits, and its exit code is propagated.
 
-If no command is provided, the agent prints the name of its socket to
-stdout, and then accepts connections indefinitely. The HUP
-signal makes the agent cleanup and exit.
+If no command is provided, the agent accepts connections indefinitely.
+The HUP signal makes the agent cleanup and exit. If the agent uses a
+random temporary socket name, the name is written to stdout.
+Regardless, stdout is closed when the agent has a bound socket and is
+accepting connetions.
 `
 	// Default connector url
 	connector := "localhost:12345"
@@ -114,6 +117,8 @@ signal makes the agent cleanup and exit.
 		return 0, fmt.Errorf("The --auth-file option is required with --key-id.")
 	}
 
+	printSocket := false
+
 	// Did we get a listening socket from inetd/systemd ?
 	socket, err := inetdSocket(os.Stdin)
 	if err != nil {
@@ -139,6 +144,7 @@ signal makes the agent cleanup and exit.
 				return 0, fmt.Errorf("rand.Read failed: %v", err)
 			}
 			socketName = filepath.Join(os.TempDir(), fmt.Sprintf("agent-sock-%x", r))
+			printSocket = true
 		} else if err := os.Remove(socketName); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return 0, fmt.Errorf("removing file %q failed: %v", socketName, err)
 		}
@@ -148,8 +154,6 @@ signal makes the agent cleanup and exit.
 		}
 		defer socket.Close()
 		defer os.Remove(socketName)
-
-		fmt.Printf("%s\n", socketName)
 	}
 	var signer crypto.Signer
 	if len(keyFile) > 0 {
@@ -207,6 +211,11 @@ signal makes the agent cleanup and exit.
 		}
 		return 0, err
 	}
+
+	if printSocket {
+		fmt.Printf("%s\n", socketName)
+	}
+
 	// We're not going to write anything more to stdout, and
 	// closing signals EOF to anyone reading stdout. EOF also
 	// means we're listening on the socket.
