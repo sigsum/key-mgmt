@@ -74,8 +74,8 @@ exits, and its exit code is propagated.
 If no command is provided, the agent accepts connections indefinitely.
 The HUP signal makes the agent cleanup and exit. If the agent uses a
 random temporary socket name, the name is written to stdout.
-Regardless, stdout is closed when the agent has a bound socket and is
-accepting connetions.
+Regardless, the agent closes stdout once the socket has been bound and
+it's ready to accept connections.
 `
 	// Default connector url
 	connector := "localhost:12345"
