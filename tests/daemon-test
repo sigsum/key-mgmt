@@ -2,13 +2,13 @@
 
 set -e
 
-cd "$(dirname $0)"
+cd "$(dirname "$0")"
 
 rm -f tmp.*
 
 cleanup() {
     pid=$(cat tmp.pid 2>/dev/null) || return 0
-    kill -HUP ${pid}
+    kill -HUP "${pid}"
 }
 
 trap cleanup EXIT

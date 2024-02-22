@@ -2,7 +2,7 @@
 
 set -e
 
-cd "$(dirname $0)"
+cd "$(dirname "$0")"
 
 rm -f tmp.*
 ssh-keygen -q -N '' -t ed25519 -f tmp.key
