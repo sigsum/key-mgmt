@@ -2,7 +2,7 @@
 
 The detailed documentation for our YubiHSM key management strategy is documented
 [separately](./key-management.md).  Below are install instructions and a
-complementary demo on how to do the provisioning and sign with `yubihsm-agent`.
+complementary demo on how to do the provisioning and sign with `sigsum-agent`.
 
 ## Install the YubiHSM tools
 
@@ -82,18 +82,23 @@ possible to connect with `yubihsm-shell` in a separate terminal:
     Session keepalive set up to run every 15 seconds
     yubihsm> ^D
 
-## Install yubihsm-agent
+## Install sigsum-agent
 
 Install [Go's toolchain][], at least version 1.19.  You may find packaged
 versions of Go in your distribution, e.g., `apt install golang-1.19` on Debian.
 
-Install `yubihsm-agent`:
+This tool is being renamed, the latest tagged version can be installed
+under the old name `yubihsm-agent` using
 
     $ go install sigsum.org/key-mgmt/cmd/yubihsm-agent@v0.1.0
 
+The latest version can be installed using
+
+    $ go install sigsum.org/key-mgmt/cmd/sigsum-agent@latest
+
 [Go's toolchain]: https://go.dev/doc/install
 
-**Note:** you don't need yubihsm-agent in order to provision a new YubiHSM.
+**Note:** you don't need sigsum-agent in order to provision a new YubiHSM.
 
 ## Demo
 
@@ -245,9 +250,9 @@ If it makes sense for your operational setup, you may consider storing `logsrv*`
 and `witness.txt` separately from each other.  E.g., if log servers and
 witnesses are not operated by the same day-to-day operations team.
 
-### Try signing using yubihsm-agent
+### Try signing using sigsum-agent
 
-The `yubihsm-agent` program is a tiny ssh-agent daemon that computes Ed25519
+The `sigsum-agent` program is a tiny ssh-agent daemon that computes Ed25519
 signatures by interacting with the `yubihsm-connector` protocol on localhost. To
 use a key, you need an "auth-file" containing the auth-id (decimal number) and
 the corresponding passphrase, separated be a `:` character, and the key-id.
@@ -260,14 +265,14 @@ key-id 600. An auth-file for the log server can be created using
 To sign a test message using a log server key, you can then run
 
     $ yubihsm-connector &
-    $ yubihsm-agent -a log-auth -i 500 ssh-add -L > key.pub
+    $ sigsum-agent -a log-auth -i 500 ssh-add -L > key.pub
     $ echo "test message" > msg
-    $ yubihsm-agent -a log-auth -i 500 ssh-keygen -q -Y sign -n test-namespace -f key.pub msg
+    $ sigsum-agent -a log-auth -i 500 ssh-keygen -q -Y sign -n test-namespace -f key.pub msg
 
 The signature can be verified using
 
     $ ssh-keygen -q -Y check-novalidate -n test-namespace -f key.pub -s msg.sig < msg
 
-See `yubihsm-agent --help` for details on the agent's options.
+See `sigsum-agent --help` for details on the agent's options.
 
 **Note:** does not need to happen on the provisioning machine.

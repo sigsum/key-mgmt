@@ -15,7 +15,7 @@ trap cleanup EXIT
 
 ssh-keygen -q -N '' -t ed25519 -f tmp.key
 
-go build -o tmp.agent ../cmd/yubihsm-agent
+go build -o tmp.agent ../cmd/sigsum-agent
 
 # The cat process blocks until the backgrounded process closes its
 # stdout, meaning that it has bound the socket and is ready to serve.

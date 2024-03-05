@@ -2,7 +2,7 @@
 
 #
 # A test that generates a signing key on a YubiHSM, signs a message using
-# yubihsm-agent, verifies the message, and then deletes the signing key.
+# sigsum-agent, verifies the message, and then deletes the signing key.
 #
 # Note: a factory-reset YubiHSM needs to be plugged in before running this test.
 # If all goes well, the YubiHSM will still be in a factory-reset state on exit.
@@ -39,7 +39,7 @@ EOF
 
 echo "[PASS] Generate YubiHSM test key"
 
-go run ../cmd/yubihsm-agent/main.go -i 123 -a <(echo "1:password") /bin/sh <<EOF
+go run ../cmd/sigsum-agent -i 123 -a <(echo "1:password") /bin/sh <<EOF
    ssh-add -L > tmp.pub
    echo foo > tmp.msg
    ssh-keygen -q -Y sign -n ns -f tmp.pub tmp.msg
