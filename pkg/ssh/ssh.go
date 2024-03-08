@@ -23,8 +23,6 @@ import (
 	"math"
 )
 
-// SSH protocol utilities, copied from sigsum-go/internal/ssh.go
-
 type bytesOrString interface{ []byte | string }
 
 func SerializeUint32(x uint32) []byte {
@@ -109,6 +107,40 @@ func parseBytes[T any](blob []byte, padding []byte, reader func(io.Reader) (T, e
 	}
 	return res, err
 }
+
+// Both keys and signatures are serialized in the same way.
+func serializeEd25519(blob []byte) []byte {
+	return bytes.Join([][]byte{
+		SerializeString("ssh-ed25519"),
+		SerializeString(blob)},
+		nil)
+}
+
+func SerializeEd25519PublicKey(blob []byte) []byte {
+	if len(blob) != 32 {
+		panic(fmt.Sprintf("Bad size %d for ed25519 public key", len(blob)))
+	}
+	return serializeEd25519(blob)
+}
+
+func SerializeEd25519Signature(blob []byte) []byte {
+	if len(blob) != 64 {
+		panic(fmt.Sprintf("Bad size %d for ed25519 signature", len(blob)))
+	}
+	return serializeEd25519(blob)
+}
+
+func ReadEd25519PublicKey(r io.Reader) ([]byte, error) {
+	if err := readSkip(r, bytes.Join([][]byte{
+		SerializeString("ssh-ed25519"),
+		SerializeUint32(32)},
+		nil)); err != nil {
+		return nil, fmt.Errorf("invalid public key blob prefix: %w", err)
+	}
+	return readBytes(r, 32)
+}
+
+// TODO: Add ReadEd25519Signature ?
 
 // TODO: Consider if these really should be exported.
 
