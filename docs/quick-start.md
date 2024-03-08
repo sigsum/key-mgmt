@@ -87,8 +87,8 @@ possible to connect with `yubihsm-shell` in a separate terminal:
 Install [Go's toolchain][], at least version 1.19.  You may find packaged
 versions of Go in your distribution, e.g., `apt install golang-1.19` on Debian.
 
-This tool is being renamed, the latest tagged version can be installed
-under the old name `yubihsm-agent` using
+This tool is being renamed, the latest tagged version under the old
+name `yubihsm-agent` can be installed using
 
     $ go install sigsum.org/key-mgmt/cmd/yubihsm-agent@v0.1.0
 
