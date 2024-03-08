@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+
+	"sigsum.org/key-mgmt/pkg/ssh"
 )
 
 const (
@@ -27,23 +29,23 @@ type signRequest struct {
 }
 
 func readSignRequest(r io.Reader) (req signRequest, err error) {
-	req.pubKey, err = readString(r, maxSize)
+	req.pubKey, err = ssh.ReadString(r, maxSize)
 	if err != nil {
 		return
 	}
-	req.data, err = readString(r, maxSize)
+	req.data, err = ssh.ReadString(r, maxSize)
 	if err != nil {
 		return
 	}
 	// Flags, currently ignored.
-	_, err = readUint32(r)
+	_, err = ssh.ReadUint32(r)
 	return
 }
 
 // The map keys are SSH public key blobs (without outer length field).
 func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 	for {
-		data, err := readString(r, maxSize)
+		data, err := ssh.ReadString(r, maxSize)
 		if err != nil {
 			return err
 		}
@@ -62,14 +64,14 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 			}
 
 			rsp.WriteByte(SSH_AGENT_IDENTITIES_ANSWER)
-			writeUint32(&rsp, uint32(len(keys)))
+			ssh.WriteUint32(&rsp, uint32(len(keys)))
 			for k, _ := range keys {
-				writeString(&rsp, k)
+				ssh.WriteString(&rsp, k)
 				// Arbitrary comment
-				writeString(&rsp, "oracle key")
+				ssh.WriteString(&rsp, "oracle key")
 			}
 		case SSH_AGENTC_SIGN_REQUEST:
-			req, err := parseBytes(msg, nil, readSignRequest)
+			req, err := ssh.ParseBytes(msg, nil, readSignRequest)
 			if err != nil {
 				return err
 			}
@@ -85,11 +87,11 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 				break
 			}
 			rsp.WriteByte(SSH_AGENT_SIGN_RESPONSE)
-			writeString(&rsp, sig)
+			ssh.WriteString(&rsp, sig)
 		default:
 			rsp.WriteByte(SSH_AGENT_FAILURE)
 		}
-		if err := writeString(w, rsp.Bytes()); err != nil {
+		if err := ssh.WriteString(w, rsp.Bytes()); err != nil {
 			return err
 		}
 	}

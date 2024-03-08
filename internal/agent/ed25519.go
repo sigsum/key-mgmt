@@ -5,13 +5,15 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"fmt"
+
+	"sigsum.org/key-mgmt/pkg/ssh"
 )
 
 // Both keys and signatures are serialized in the same way.
 func serializeEd25519(blob []byte) []byte {
 	return bytes.Join([][]byte{
-		serializeString("ssh-ed25519"),
-		serializeString(blob)},
+		ssh.SerializeString("ssh-ed25519"),
+		ssh.SerializeString(blob)},
 		nil)
 }
 

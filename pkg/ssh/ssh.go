@@ -1,4 +1,19 @@
-package agent
+// The ssh package implements utilities for working with SSH formats.
+//
+// The way values are serialized in SSH is documented in
+// https://www.rfc-editor.org/rfc/rfc4251#section-5.
+//
+// Use of ED25519 keys is specified in https://www.rfc-editor.org/rfc/rfc8709
+//
+// There are also a few openssh-specific formats (outside of the IETF standards).
+//
+// The ssh-agent protocol is documented at
+// https://datatracker.ietf.org/doc/html/draft-miller-ssh-agent.
+//
+// The private key format used by openssh is documented at
+// https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.key
+
+package ssh
 
 import (
 	"bytes"
@@ -12,13 +27,13 @@ import (
 
 type bytesOrString interface{ []byte | string }
 
-func serializeUint32(x uint32) []byte {
+func SerializeUint32(x uint32) []byte {
 	buffer := make([]byte, 4)
 	binary.BigEndian.PutUint32(buffer, x)
 	return buffer
 }
 
-func serializeString[T bytesOrString](s T) []byte {
+func SerializeString[T bytesOrString](s T) []byte {
 	if len(s) > math.MaxInt32 {
 		panic(fmt.Sprintf("string too large for ssh, length %d", len(s)))
 	}
@@ -28,13 +43,13 @@ func serializeString[T bytesOrString](s T) []byte {
 	return buffer
 }
 
-func writeUint32(w io.Writer, x uint32) error {
-	_, err := w.Write(serializeUint32(x))
+func WriteUint32(w io.Writer, x uint32) error {
+	_, err := w.Write(SerializeUint32(x))
 	return err
 }
 
-func writeString[T bytesOrString](w io.Writer, s T) error {
-	_, err := w.Write(serializeString(s))
+func WriteString[T bytesOrString](w io.Writer, s T) error {
+	_, err := w.Write(SerializeString(s))
 	return err
 }
 
@@ -46,7 +61,7 @@ func readBytes(r io.Reader, size int) ([]byte, error) {
 	return buf, nil
 }
 
-func readUint32(r io.Reader) (uint32, error) {
+func ReadUint32(r io.Reader) (uint32, error) {
 	lenBuf, err := readBytes(r, 4)
 	if err != nil {
 		return 0, err
@@ -54,8 +69,8 @@ func readUint32(r io.Reader) (uint32, error) {
 	return binary.BigEndian.Uint32(lenBuf), nil
 }
 
-func readString(r io.Reader, max int) ([]byte, error) {
-	len, err := readUint32(r)
+func ReadString(r io.Reader, max int) ([]byte, error) {
+	len, err := ReadUint32(r)
 	if err != nil {
 		return nil, err
 	}
@@ -93,4 +108,18 @@ func parseBytes[T any](blob []byte, padding []byte, reader func(io.Reader) (T, e
 		return res, fmt.Errorf("unexpected padding bytes: %x", leftOver)
 	}
 	return res, err
+}
+
+// TODO: Consider if these really should be exported.
+
+func ReadBytes(r io.Reader, size int) ([]byte, error) {
+	return readBytes(r, size)
+}
+
+func ReadSkip(r io.Reader, prefix []byte) error {
+	return readSkip(r, prefix)
+}
+
+func ParseBytes[T any](blob []byte, padding []byte, reader func(io.Reader) (T, error)) (T, error) {
+	return parseBytes(blob, padding, reader)
 }
