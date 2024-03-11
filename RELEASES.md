@@ -5,7 +5,7 @@
 The following programs are releases and supported:
 
   - `scripts/`
-  - `cmd/yubihsm-agent`
+  - `cmd/sigsum-agent`
 
 Releases are announced on the [sigsum-announce][] mailing list. The [NEWS
 file](./NEWS) documents the user visible changes for each release, the
@@ -17,11 +17,11 @@ intermediate tags are **not** released and supported.
 
 The key-mgmt Go module only contains internal libraries.  By the terms of the
 LICENSE file you are free to use this code "as is" in almost any way you like.
-However, we support its use **only** via the `yubihsm-agent` program for now.
+However, we support its use **only** via the `sigsum-agent` program for now.
 We don't aim to provide any backwards compatibility for internal interfaces.
 
 We encourage use of the key management strategy described in this repository,
-including use of the released scripts for provisioning and `yubihsm-agent` to
+including use of the released scripts for provisioning and `sigsum-agent` to
 integrate with the SSH-agent protocol that Sigsum logs and witnesses support.
 
 [sigsum-announce]: https://lists.sigsum.org/mailman3/postorius/lists/sigsum-announce.lists.sigsum.org/

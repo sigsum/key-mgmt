@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 rm -f tmp.*
 ssh-keygen -q -N '' -t ed25519 -f tmp.key
 
-go run ../cmd/yubihsm-agent -s ./tmp.socket -k tmp.key /bin/sh <<EOF
+go run ../cmd/sigsum-agent -s ./tmp.socket -k tmp.key /bin/sh <<EOF
    ssh-add -L > tmp.pub
    echo foo > tmp.msg
    ssh-keygen -q -Y sign -n ns -f tmp.pub tmp.msg 
