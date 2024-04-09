@@ -1,0 +1,50 @@
+#! /bin/sh
+
+set -eu
+
+cd "$(dirname "$0")"
+
+die () {
+    echo "$@"
+    exit 1
+}
+
+clean_up() {
+    pid=$(cat tmp.pid 2>/dev/null) || return 0
+
+    # sigsum-agent removes the pid file before exiting. There is a race where
+    # we might read the pid file and attempt to kill the process too
+    # late. Due to the short period, it's extremely unlikely that the
+    # pid has already been reused for a different process.
+    kill "${pid}"
+}
+
+wait_for_file () {
+    for _ in $(seq 20); do
+	if [ -f tmp.out ] ; then
+	    return
+	fi
+	sleep 1
+    done
+    exit 1
+}
+
+rm -f tmp.agent tmp.out tmp.pid tmp.key tmp.key.pub
+
+ssh-keygen -q -N '' -t ed25519 -f tmp.key
+
+go run ../cmd/sigsum-agent --pid-file tmp.pid -k tmp.key \
+   /bin/sh -c 'echo $$ > tmp.out ; sleep 1000' 2> tmp.stderr &
+
+trap clean_up EXIT
+
+wait_for_file tmp.out
+
+PID_BY_AGENT="$(cat tmp.pid)"
+PID_BY_SH="$(cat tmp.out)"
+[ "${PID_BY_SH}" = "${PID_BY_AGENT}" ] || die "unexpected pid file contents: ${PID_BY_AGENT}"
+
+kill -HUP "${PID_BY_AGENT}"
+wait
+
+grep -q -i hangup tmp.stderr || die 'no log message indicating hangup signal'

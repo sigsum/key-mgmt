@@ -194,22 +194,32 @@ it's ready to accept connections.
 	}
 	keys := map[string]agent.SSHSign{sshKey: sshSign}
 
-	if len(pidFile) > 0 {
-		pid := fmt.Sprintf("%d\n", os.Getpid())
-		if err := os.WriteFile(pidFile, []byte(pid), 0660); err != nil {
-			return 0, fmt.Errorf("failed creating pid file: %v", err)
-		}
-		defer os.Remove(pidFile)
-	}
-
 	if len(set.Args()) > 0 {
 		go runAgent(socket, keys)
 
-		err = runCommand(socketName, set.Args())
+		cmd := createCommand(socketName, set.Args())
+		if err := cmd.Start(); err != nil {
+			return 0, err
+		}
+		if len(pidFile) > 0 {
+			if err := writePidFile(pidFile, cmd.Process.Pid); err != nil {
+				return 0, err
+			}
+			defer os.Remove(pidFile)
+		}
+
+		err = cmd.Wait()
 		if exit, ok := err.(*exec.ExitError); ok && exit.Exited() {
 			return exit.ExitCode(), nil
 		}
 		return 0, err
+	}
+
+	if len(pidFile) > 0 {
+		if err := writePidFile(pidFile, os.Getpid()); err != nil {
+			return 0, err
+		}
+		defer os.Remove(pidFile)
 	}
 
 	if printSocket {
@@ -264,13 +274,20 @@ func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
 	}
 }
 
-// Runs command, with appropriate environment variable, and waits for completion.
-func runCommand(socketName string, cmdLine []string) error {
+// Sets up the command to run, with appropriate environment variable and redirects.
+func createCommand(socketName string, cmdLine []string) *exec.Cmd {
 	cmd := exec.Command(cmdLine[0], cmdLine[1:]...)
 	cmd.Env = append(cmd.Environ(), fmt.Sprintf("SSH_AUTH_SOCK=%s", socketName))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	return cmd
+}
+
+func writePidFile(file string, pid int) error {
+	if err := os.WriteFile(file, []byte(fmt.Sprintf("%d\n", pid)), 0660); err != nil {
+		return fmt.Errorf("failed creating pid file: %v", err)
+	}
+	return nil
 }
