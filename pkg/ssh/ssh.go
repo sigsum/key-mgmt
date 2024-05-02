@@ -140,18 +140,8 @@ func ReadEd25519PublicKey(r io.Reader) ([]byte, error) {
 	return readBytes(r, 32)
 }
 
-// TODO: Add ReadEd25519Signature ?
-
-// TODO: Consider if these really should be exported.
-
-func ReadBytes(r io.Reader, size int) ([]byte, error) {
-	return readBytes(r, size)
-}
-
-func ReadSkip(r io.Reader, prefix []byte) error {
-	return readSkip(r, prefix)
-}
-
-func ParseBytes[T any](blob []byte, padding []byte, reader func(io.Reader) (T, error)) (T, error) {
-	return parseBytes(blob, padding, reader)
+// Apply a reader function to a byte slice. Requires that the reader
+// consumes all bytes.
+func ParseBytes[T any](blob []byte, reader func(io.Reader) (T, error)) (T, error) {
+	return parseBytes(blob, nil, reader)
 }

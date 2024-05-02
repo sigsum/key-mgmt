@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"syscall"
 
 	"github.com/pborman/getopt/v2"
+
+	"sigsum.org/key-mgmt/pkg/ssh"
 
 	"sigsum.org/key-mgmt/internal/agent"
 	"sigsum.org/key-mgmt/internal/hsm"
@@ -167,11 +170,16 @@ stdout, they are written as one line each, pid first.
 	}
 	var signer crypto.Signer
 	if len(keyFile) > 0 {
-		var err error
-		signer, err = agent.ReadPrivateKeyFile(keyFile)
+		ascii, err := os.ReadFile(keyFile)
 		if err != nil {
-			return 0, fmt.Errorf("Reading private key file %q failed: %v", keyFile, err)
+			return 0, err
 		}
+		keys, err := ssh.ParseAsciiEd25519PrivateKey(ascii)
+		if err != nil {
+			return 0, fmt.Errorf("Parsing private key file %q failed: %v",
+				keyFile, err)
+		}
+		signer = ed25519.PrivateKey(keys)
 	} else {
 		if keyId >= 0x10000 {
 			return 0, fmt.Errorf("Key id %d out of range.", keyId)

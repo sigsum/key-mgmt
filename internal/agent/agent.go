@@ -71,7 +71,7 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 				ssh.WriteString(&rsp, "oracle key")
 			}
 		case SSH_AGENTC_SIGN_REQUEST:
-			req, err := ssh.ParseBytes(msg, nil, readSignRequest)
+			req, err := ssh.ParseBytes(msg, readSignRequest)
 			if err != nil {
 				return err
 			}
