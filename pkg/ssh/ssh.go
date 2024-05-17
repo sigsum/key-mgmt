@@ -140,6 +140,16 @@ func ReadEd25519PublicKey(r io.Reader) ([]byte, error) {
 	return readBytes(r, 32)
 }
 
+func ReadEd25519Signature(r io.Reader) ([]byte, error) {
+	if err := readSkip(r, bytes.Join([][]byte{
+		SerializeString("ssh-ed25519"),
+		SerializeUint32(64)},
+		nil)); err != nil {
+		return nil, fmt.Errorf("invalid public key blob prefix: %w", err)
+	}
+	return readBytes(r, 64)
+}
+
 // Apply a reader function to a byte slice. Requires that the reader
 // consumes all bytes.
 func ParseBytes[T any](blob []byte, reader func(io.Reader) (T, error)) (T, error) {

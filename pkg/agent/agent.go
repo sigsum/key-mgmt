@@ -44,6 +44,9 @@ func (b *bodyReader) Read(buf []byte) (int, error) {
 	}
 	n, err := b.r.Read(buf)
 	b.left -= uint32(n)
+	if b.left > 0 && err == io.EOF {
+		return n, fmt.Errorf("unexpected EOF")
+	}
 	return n, err
 }
 
