@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
@@ -78,4 +79,23 @@ func ParseAsciiEd25519PublicKey(ascii []byte) ([]byte, string, error) {
 	}
 
 	return key, comment, nil
+}
+
+func WriteAsciiEd25519PublicKey(w io.Writer, pub []byte, comment string) error {
+	keyBlob := SerializeEd25519PublicKey(pub)
+	if len(comment) > 0 {
+		comment = " " + comment
+	}
+	_, err := fmt.Fprintf(w, "ssh-ed25519 %s%s", base64.StdEncoding.EncodeToString(keyBlob), comment)
+	return err
+}
+
+func WriteAsciiEd25519PrivateKey(w io.Writer, priv, pub []byte) error {
+	var nonce [4]byte
+	_, err := rand.Read(nonce[:])
+	if err != nil {
+		return err
+	}
+	keyBlob := serializeEd25519PrivateKey(priv, pub, nonce)
+	return pem.Encode(w, &pem.Block{Type: pemPrivateKeyTag, Bytes: keyBlob})
 }
