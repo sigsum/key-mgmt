@@ -9,4 +9,5 @@ check:
 	./tests/status-test
 	./tests/daemon-test
 	./tests/pid-file-test
+	./tests/pid-stdout-test
 	./tests/inetd-test
