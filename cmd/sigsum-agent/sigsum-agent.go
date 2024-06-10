@@ -76,6 +76,16 @@ The HUP signal makes the agent cleanup and exit. If the agent uses a
 random temporary socket name, the name is written to stdout.
 Regardless, the agent closes stdout once the socket has been bound and
 it's ready to accept connections.
+
+The --pid-file option can be used to get the process id of the command
+the agent started, or, if no command was provided, of the agent
+itself. This option takes a filename as argument. The pid is written
+to this file, as a decimal number, and the file is automatically
+deleted when the agent exits. The special name "-" means stdout, with
+the following behavior: If "-" is used together with a command, stdout
+is closed after the pid file is written, and the command's stdout is
+redirected to /dev/null. If both pid and socket name are written to
+stdout, they are written as one line each, pid first.
 `
 	// Default connector url
 	connector := "localhost:12345"
@@ -94,7 +104,7 @@ it's ready to accept connections.
 	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
 	set.FlagLong(&keyFile, "key-file", 'k', "private key file")
 	set.FlagLong(&socketName, "socket-name", 's', "name of unix socket")
-	set.FlagLong(&pidFile, "pid-file", 0, "for for storing agent's pid")
+	set.FlagLong(&pidFile, "pid-file", 0, "for writing pid of agent or command, '-' means stdout")
 	set.FlagLong(&help, "help", 'h', "Display help")
 
 	err := set.Getopt(os.Args, nil)
@@ -197,15 +207,21 @@ it's ready to accept connections.
 	if len(set.Args()) > 0 {
 		go runAgent(socket, keys)
 
-		cmd := createCommand(socketName, set.Args())
+		cmd := createCommand(socketName, pidFile != "-", set.Args())
 		if err := cmd.Start(); err != nil {
 			return 0, err
 		}
 		if len(pidFile) > 0 {
-			if err := writePidFile(pidFile, cmd.Process.Pid); err != nil {
+			useStdout, err := writePidFile(pidFile, cmd.Process.Pid)
+			if err != nil {
 				return 0, err
 			}
-			defer os.Remove(pidFile)
+			if useStdout {
+				// Close, to signal EOF to the process reading the pid.
+				os.Stdout.Close()
+			} else {
+				defer os.Remove(pidFile)
+			}
 		}
 
 		err = cmd.Wait()
@@ -216,10 +232,13 @@ it's ready to accept connections.
 	}
 
 	if len(pidFile) > 0 {
-		if err := writePidFile(pidFile, os.Getpid()); err != nil {
+		useStdout, err := writePidFile(pidFile, os.Getpid())
+		if err != nil {
 			return 0, err
 		}
-		defer os.Remove(pidFile)
+		if !useStdout {
+			defer os.Remove(pidFile)
+		}
 	}
 
 	if printSocket {
@@ -275,19 +294,29 @@ func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
 }
 
 // Sets up the command to run, with appropriate environment variable and redirects.
-func createCommand(socketName string, cmdLine []string) *exec.Cmd {
+func createCommand(socketName string, useStdout bool, cmdLine []string) *exec.Cmd {
 	cmd := exec.Command(cmdLine[0], cmdLine[1:]...)
 	cmd.Env = append(cmd.Environ(), fmt.Sprintf("SSH_AUTH_SOCK=%s", socketName))
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
+	if useStdout {
+		cmd.Stdout = os.Stdout
+	}
 	cmd.Stderr = os.Stderr
 
 	return cmd
 }
 
-func writePidFile(file string, pid int) error {
-	if err := os.WriteFile(file, []byte(fmt.Sprintf("%d\n", pid)), 0660); err != nil {
-		return fmt.Errorf("failed creating pid file: %v", err)
+func writePidFile(file string, pid int) (bool, error) {
+	var err error
+	if file == "-" {
+		_, err = fmt.Printf("%d\n", pid)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
 	}
-	return nil
+	if err := os.WriteFile(file, []byte(fmt.Sprintf("%d\n", pid)), 0660); err != nil {
+		return false, fmt.Errorf("failed creating pid file: %v", err)
+	}
+	return false, nil
 }
