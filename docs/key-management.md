@@ -21,9 +21,10 @@ The overall objectives are:
   1. Signing requires access to a localhost-only YubiHSM and a 128-bit secret
      generated while the device was (re)provisioned.  This _signing-oracle
      YubiHSM_ is plugged into a networked node at all times (i.e., a primary log
-     server, a secondary log server, or a witness), but is only usable as a
+     server, a secondary log server, or a witness), and is only usable as a
      signing oracle if a YubiHSM authentication passphrase is made available.
-     The passphrase is only accessible as root if the node is in active-use.
+     The passphrase is only accessible as root and only when the node is in
+     active use.
   2. (Re)provisioning requires access to a _backup YubiHSM_ and a different
      128-bit secret.  Backup YubiHSMs are never plugged into a networked node;
      similarly, backup passphrases are never entered into a networked node.
