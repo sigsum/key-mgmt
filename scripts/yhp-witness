@@ -48,6 +48,7 @@ EOF
 
 openssl pkeyutl -verify -pubin -inkey "$witness_pubkey_file" -sigfile <(base64 -d "$witness_signature_file") -rawin -in "$message_file" >&2
 
-echo "witness_authkey_passphrase($id)=$witness_authkey_passphrase"
+echo "witness_authkey_passphrase=$witness_authkey_passphrase"
+echo "witness_serial_number=$id"
 echo ""
 cat "$witness_pubkey_file"

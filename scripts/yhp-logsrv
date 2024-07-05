@@ -48,6 +48,7 @@ EOF
 
 openssl pkeyutl -verify -pubin -inkey "$log_pubkey_file" -sigfile <(base64 -d "$log_signature_file") -rawin -in "$message_file" >&2
 
-echo "logsrv_authkey_passphrase($id)=$logsrv_authkey_passphrase"
+echo "logsrv_authkey_passphrase=$logsrv_authkey_passphrase"
+echo "logsrv_serial_number=$id"
 echo ""
 cat "$log_pubkey_file"
