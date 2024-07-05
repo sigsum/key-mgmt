@@ -5,6 +5,7 @@ set -eu
 cd "$(dirname "$0")"
 . config # loads constants for YubiHSM object IDs and such
 . common # loads helpers and reads environment variables
+rm -f "$witness_pubkey_file" "$witness_signature_file" # extracted from yubihsm
 trap clean_up EXIT
 
 ###
@@ -35,7 +36,8 @@ yubihsm_shell << EOF
 	put     wrapkey 0 "$WRAPPING_KEY_ID" "$WRAPPING_KEY_LABEL" "$WITNESS_SIGNING_DOMAIN" import-wrapped,export-wrapped exportable-under-wrap,sign-eddsa "$wrapkey_passphrase"
 	put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_witness"
 
-	get pubkey 0 "$WITNESS_SIGNING_KEY_ID" "$pub_file_witness"
+	get pubkey 0 "$WITNESS_SIGNING_KEY_ID" "$witness_pubkey_file"
+	sign eddsa 0 "$WITNESS_SIGNING_KEY_ID" ed25519 "$message_file" "$witness_signature_file"
 
 	delete          0 "$WRAPPING_KEY_ID" wrap-key
 	delete          0 1                  authentication-key
@@ -44,6 +46,8 @@ yubihsm_shell << EOF
 	session close   0
 EOF
 
+openssl pkeyutl -verify -pubin -inkey "$witness_pubkey_file" -sigfile <(base64 -d "$witness_signature_file") -rawin -in "$message_file" >&2
+
 echo "witness_authkey_passphrase($id)=$witness_authkey_passphrase"
 echo ""
-cat "$pub_file_witness"
+cat "$witness_pubkey_file"
