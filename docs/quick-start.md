@@ -225,6 +225,7 @@ for plugging YubiHSMs in and out of the provisioning machine.  Example below.
     #!/bin/bash
     
     set -eu
+    set -o pipefail
 
     ./scripts/yhp-keygen  | tee backup-1.txt
     export AUTHKEY_PASSPHRASE=$(grep backup_authkey_passphrase backup-1.txt | cut -d'=' -f2)
