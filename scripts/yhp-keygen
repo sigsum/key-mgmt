@@ -16,6 +16,7 @@ id=$(yubihsm_probe "keygen and initial backup provisioning")
 authkey_pass=$(yubihsm_get_passphrase 1 password)
 wrapkey_pass=$(yubihsm_get_passphrase 1 password)
 
+echo "" # identical output formatting as yhp-backup
 yubihsm_shell << EOF
 	connect
 	session open 1 password
@@ -40,7 +41,6 @@ EOF
 openssl pkeyutl -verify -pubin -inkey "$log_pubkey_file"     -sigfile <(base64 -d "$log_signature_file")     -rawin -in "$message_file" >&2
 openssl pkeyutl -verify -pubin -inkey "$witness_pubkey_file" -sigfile <(base64 -d "$witness_signature_file") -rawin -in "$message_file" >&2
 
-echo "" # identical output formatting as yhp-backup
 echo "backup_authkey_passphrase=$authkey_pass"
 echo "backup_wrapkey_passphrase=$wrapkey_pass"
 echo "backup_serial_number=$id"
