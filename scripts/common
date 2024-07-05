@@ -31,6 +31,11 @@ function yubihsm_probe() {
 	info "INSERT YubiHSM $1"
 	read -rp "ENTER to continue"
 
+	num_yubihsm=$(lsusb | grep YubiHSM | wc -l)
+	if [[ "$num_yubihsm" != 1 ]]; then
+		die "keep exactly one yubihsm plugged in at a time, have: $num_yubihsm"
+	fi
+
 	bus=$(lsusb | grep YubiHSM | cut -d' ' -f2)
 	device=$(lsusb | grep YubiHSM | cut -d' ' -f4)
 	if [[ -z "$bus" ]] || [[ -z "$device" ]]; then
