@@ -12,13 +12,18 @@ wrapkey_passphrase=${WRAPKEY_PASSPHRASE:-}
 ###
 # Internal
 ###
-wrap_file_log=logsrv.wrapped
-wrap_file_witness=witness.wrapped
+wrap_file_log=tmp.logsrv.wrapped
+wrap_file_witness=tmp.witness.wrapped
+pub_file_log=tmp.logsrv.pem
+pub_file_witness=tmp.witness.pem
 function clean_up() {
 	set +eu
 
 	shred -zun 12 "$wrap_file_log" >/dev/null 2>&1
 	shred -zun 12 "$wrap_file_witness" >/dev/null 2>&1
+
+	rm -f "$pub_file_log"
+	rm -f "$pub_file_witness"
 }
 
 function info() { echo "*** $*"      >&2;         }

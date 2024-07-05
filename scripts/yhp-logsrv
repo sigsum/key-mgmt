@@ -35,6 +35,8 @@ yubihsm_shell << EOF
 	put     wrapkey 0 "$WRAPPING_KEY_ID" "$WRAPPING_KEY_LABEL" "$LOGSRV_SIGNING_DOMAIN" import-wrapped,export-wrapped exportable-under-wrap,sign-eddsa "$wrapkey_passphrase"
 	put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_log"
 
+	get pubkey 0 "$LOGSRV_SIGNING_KEY_ID" "$pub_file_log"
+
 	delete          0 "$WRAPPING_KEY_ID" wrap-key
 	delete          0 1                  authentication-key
 
@@ -43,3 +45,5 @@ yubihsm_shell << EOF
 EOF
 
 echo "logsrv_authkey_passphrase($id)=$logsrv_authkey_passphrase"
+echo ""
+cat "$pub_file_log"
