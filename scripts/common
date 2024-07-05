@@ -19,8 +19,6 @@ function clean_up() {
 
 	shred -zun 12 "$wrap_file_log" >/dev/null 2>&1
 	shred -zun 12 "$wrap_file_witness" >/dev/null 2>&1
-
-	[[ -z $(pidof yubihsm-connector) ]] || warn "some yubihsm-connector is still running"
 }
 
 function info() { echo "*** $*"      >&2;         }
@@ -54,6 +52,8 @@ function yubihsm_probe() {
 function yubihsm_shell() {
 	local pid
 	local tmp
+
+	[[ -z $(pidof yubihsm-connector) ]] || die "a yubihsm-connector is already running, please stop it and try again"
 
 	yubihsm-connector >/dev/null 2>&1 &
 	pid=$!
