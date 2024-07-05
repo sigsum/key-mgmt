@@ -197,7 +197,7 @@ Delete passphrases that are stored on disk if a node becomes inactive.
 ### Locations
 
   - 2x physically secure sites for backup YubiHSMs and provisioning machine
-  - 3x physically secure homes for USB thumb drives
+  - 3x physically secure locations for USB thumb drives
   - Secure site(s) where the machines with online YubiHSMs are operated
 
 The sites that contain backup and signing-oracle YubiHSMs may be the same.
