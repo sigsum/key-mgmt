@@ -75,6 +75,8 @@ There are very few storage requirements, at most a handful of secret passphrases
 are needed.  We discourage `n < 3` to get a reasonable level of reliability.  
 
 These USB thumb drives are stored in tamper-evident bags at separate locations.
+Make sure that a secret passphrase is not stored together with a
+YubiHSM for which the passphrase is valid.
 Use a safe for additional physical security.  Record the
 tamper-evident bags' serial numbers in a git repository.  Sync all
 changes to this git repository between the trusted operators out-of-band.
