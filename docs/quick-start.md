@@ -235,6 +235,14 @@ for plugging YubiHSMs in and out of the provisioning machine.  Example below.
     ./scripts/yhp-logsrv  | tee logsrv-2.txt
     ./scripts/yhp-witness | tee witness.txt
 
+    echo ""
+    echo "OK"
+    echo ""
+    echo "Suggestion: diff -u backup-* # just different serial number"
+    echo "Suggestion: diff -u logsrv-* # just different serial number + passphrase"
+    echo "Suggestion: eyeball that backup-* and logsrv-* have the same log key"
+    echo "Suggestion: eyeball that backup-* and witness.txt have the same witness key"
+
 Replace `| tee` with `>` to avoid emitting sensitive information on stdout.
 
 ### Backup output files on USB sticks
