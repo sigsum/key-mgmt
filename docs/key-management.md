@@ -206,6 +206,15 @@ The sites that contain backup and signing-oracle YubiHSMs may be the same.
 
 ### Provisioning
 
+Log in as a non-root user.
+
+Change directory to /dev/shm. Erasing data from an SSD is very hard if
+at all possible due to wear leveling, garbage collection and probably
+more. Even if the provisioning process will not write any key material
+to disk it will write highly sensitive secrets. If you happen to write
+backup passphrases to disk anyway, don't store the provisioning
+machine together with any of the backup YubiHSM's.
+
 Run [all provision scripts](../README.md) and follow the instructions.  Take
 note of which YubiHSM serial number is provisioned with what.  Save stdout
 output to each USB thumb drive as it contains the above secret passphrases.
