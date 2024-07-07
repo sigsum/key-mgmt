@@ -5,6 +5,8 @@ set -eu
 cd "$(dirname "$0")"
 . config # loads constants for YubiHSM object IDs and such
 . common # loads helpers and reads environment variables
+rm -f "$log_pubkey_file" "$log_signature_file" # extracted from yubihsm
+rm -f "$witness_pubkey_file" "$witness_signature_file" # extracted from yubihsm
 trap clean_up EXIT
 
 ###
@@ -14,6 +16,7 @@ id=$(yubihsm_probe "keygen and initial backup provisioning")
 authkey_pass=$(yubihsm_get_passphrase 1 password)
 wrapkey_pass=$(yubihsm_get_passphrase 1 password)
 
+echo "" # identical output formatting as yhp-backup
 yubihsm_shell << EOF
 	connect
 	session open 1 password
@@ -23,12 +26,29 @@ yubihsm_shell << EOF
 	generate asymmetric 0 "$LOGSRV_SIGNING_KEY_ID"  "$LOGSRV_SIGNING_KEY_LABEL"  "$LOGSRV_SIGNING_DOMAIN"  exportable-under-wrap,sign-eddsa ed25519
 	generate asymmetric 0 "$WITNESS_SIGNING_KEY_ID" "$WITNESS_SIGNING_KEY_LABEL" "$WITNESS_SIGNING_DOMAIN" exportable-under-wrap,sign-eddsa ed25519
 
+	get pubkey 0 "$LOGSRV_SIGNING_KEY_ID"  "$log_pubkey_file"
+	get pubkey 0 "$WITNESS_SIGNING_KEY_ID" "$witness_pubkey_file"
+
+	sign eddsa 0 "$LOGSRV_SIGNING_KEY_ID"  ed25519 "$message_file" "$log_signature_file"
+	sign eddsa 0 "$WITNESS_SIGNING_KEY_ID" ed25519 "$message_file" "$witness_signature_file"
+
 	delete 0 1 authentication-key
 
 	list     objects    0
 	session  close      0
 EOF
 
+openssl pkeyutl -verify -pubin -inkey "$log_pubkey_file"     -sigfile <(base64 -d "$log_signature_file")     -rawin -in "$message_file" >&2
+openssl pkeyutl -verify -pubin -inkey "$witness_pubkey_file" -sigfile <(base64 -d "$witness_signature_file") -rawin -in "$message_file" >&2
+
 echo "backup_authkey_passphrase=$authkey_pass"
 echo "backup_wrapkey_passphrase=$wrapkey_pass"
 echo "backup_serial_number=$id"
+echo ""
+
+echo "logsrv =>"
+cat "$log_pubkey_file"
+echo ""
+
+echo "witness =>"
+cat "$witness_pubkey_file"

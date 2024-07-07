@@ -5,6 +5,7 @@ set -eu
 cd "$(dirname "$0")"
 . config # loads constants for YubiHSM object IDs and such
 . common # loads helpers and reads environment variables
+rm -f "$log_pubkey_file" "$log_signature_file" # extracted from yubihsm
 trap clean_up EXIT
 
 ###
@@ -35,6 +36,9 @@ yubihsm_shell << EOF
 	put     wrapkey 0 "$WRAPPING_KEY_ID" "$WRAPPING_KEY_LABEL" "$LOGSRV_SIGNING_DOMAIN" import-wrapped,export-wrapped exportable-under-wrap,sign-eddsa "$wrapkey_passphrase"
 	put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_log"
 
+	get pubkey 0 "$LOGSRV_SIGNING_KEY_ID" "$log_pubkey_file"
+	sign eddsa 0 "$LOGSRV_SIGNING_KEY_ID" ed25519 "$message_file" "$log_signature_file"
+
 	delete          0 "$WRAPPING_KEY_ID" wrap-key
 	delete          0 1                  authentication-key
 
@@ -42,4 +46,9 @@ yubihsm_shell << EOF
 	session close   0
 EOF
 
-echo "logsrv_authkey_passphrase($id)=$logsrv_authkey_passphrase"
+openssl pkeyutl -verify -pubin -inkey "$log_pubkey_file" -sigfile <(base64 -d "$log_signature_file") -rawin -in "$message_file" >&2
+
+echo "logsrv_authkey_passphrase=$logsrv_authkey_passphrase"
+echo "logsrv_serial_number=$id"
+echo ""
+cat "$log_pubkey_file"

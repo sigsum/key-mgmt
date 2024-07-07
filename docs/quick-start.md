@@ -82,23 +82,31 @@ possible to connect with `yubihsm-shell` in a separate terminal:
     Session keepalive set up to run every 15 seconds
     yubihsm> ^D
 
+## Install additional system packages
+
+`openssl` and `base64` are used by `scripts/`.  On Debian 12, try:
+
+    # apt install openssl basez
+
+The above tooling is used to sanity check whether the generated and imported
+keys work by signing a fixed message which is then verified using `openssl`.
+
+**Note:** this is not needed on systems that only use `sigsum-agent`.
+
 ## Install sigsum-agent
 
-Install [Go's toolchain][], at least version 1.19.  You may find packaged
-versions of Go in your distribution, e.g., `apt install golang-1.19` on Debian.
+Install [Go's toolchain][].  You need at least version 1.19.  You may find
+packaged versions of Go in your distribution.  For example, on Debian 12:
 
-This tool is being renamed, the latest tagged version under the old
-name `yubihsm-agent` can be installed using
+    apt install golang-go
 
-    $ go install sigsum.org/key-mgmt/cmd/yubihsm-agent@v0.1.0
-
-The latest version can be installed using
+Now the latest version of `sigsum-agent` can be installed as follows:
 
     $ go install sigsum.org/key-mgmt/cmd/sigsum-agent@latest
 
 [Go's toolchain]: https://go.dev/doc/install
 
-**Note:** you don't need sigsum-agent in order to provision a new YubiHSM.
+**Note:** you don't need `sigsum-agent` in order to provision a new YubiHSM.
 
 ## Demo
 
@@ -111,14 +119,7 @@ as creating a replica of a backup or provisioning a log server signing-oracle.
 
 For each YubiHSM that needs to be provisioned:
 
-    key-mgmt $ ./scripts/yhp-reset
-    *** INSERT YubiHSM to factory-reset
-    ENTER to continue
-    *** FOUND YubiHSM, serial number XXXXXXXXX
-    ENTER to continue
-    *** INSERT again while TOUCHING the YubiHSM for 10s
-    ENTER to continue
-    *** OK
+    key-mgmt$ ./scripts/yhp-reset
 
 The above script will exit with error unless the YubiHSM is in a state that
 corresponds to a complete factory-reset.  In other words, there's exactly one
@@ -126,91 +127,29 @@ object stored on the YubiHSM.  That one object is a default authentication key.
 
 ### Generate keys and create initial backup
 
-    key-mgmt $ ./scripts/yhp-keygen | tee backup-1.txt
-    *** INSERT YubiHSM keygen and initial backup provisioning
-    ENTER to continue
-    *** FOUND YubiHSM, serial number XXXXXXXXXX
-    ENTER to continue
-    Found 4 object(s)
-    id: 0x0064, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Backup authentication
-    id: 0x0190, type: wrap-key, algo: aes128-ccm-wrap, sequence: 0, label: Common wrap key
-    id: 0x01f4, type: asymmetric-key, algo: ed25519, sequence: 0, label: Log server signing key
-    id: 0x0258, type: asymmetric-key, algo: ed25519, sequence: 0, label: Witness signing key
-    
-    backup_authkey_passphrase=fdaf209618830d9ed9f5fb0f7af83068
-    backup_wrapkey_passphrase=b7924ea7eaf959d5b23d3ec5c68208a0
-    backup_serial_number=XXXXXXXXXX
+    key-mgmt$ ./scripts/yhp-keygen | tee backup-1.txt
+
+Expect to see, e.g., the authkey and wrapkey passphrases, as well as the
+generated public keys (one for the log server and another one for the witness).
 
 ### Provision backup replica from backup
 
-    key-mgmt $ ./scripts/yhp-backup | tee backup-2.txt
-    *** INSERT YubiHSM to create a backup replica from
-    ENTER to continue
-    *** FOUND YubiHSM, serial number XXXXXXXXXX
-    ENTER to continue
-    ENTER authkey passphrase: fdaf209618830d9ed9f5fb0f7af83068
-    ENTER wrapkey passphrase: b7924ea7eaf959d5b23d3ec5c68208a0
-    
-    *** INSERT YubiHSM to provision new backup replica onto (must be in factory-reset state)
-    ENTER to continue
-    *** FOUND YubiHSM, serial number YYYYYYYYYY
-    ENTER to continue
-    Found 4 object(s)
-    id: 0x0064, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Backup authentication
-    id: 0x0190, type: wrap-key, algo: aes128-ccm-wrap, sequence: 0, label: Common wrap key
-    id: 0x01f4, type: asymmetric-key, algo: ed25519, sequence: 0, label: Log server signing key
-    id: 0x0258, type: asymmetric-key, algo: ed25519, sequence: 0, label: Witness signing key
-    
-    backup_authkey_passphrase=fdaf209618830d9ed9f5fb0f7af83068
-    backup_wrapkey_passphrase=b7924ea7eaf959d5b23d3ec5c68208a0
-    backup_serial_number=YYYYYYYYYY
+    key-mgmt$ ./scripts/yhp-backup | tee backup-2.txt
 
 Note that the same authkey and wrapkey passphrases are used.  They are
-redundantly written to the file so that clean-up gets easier in the future.  For
+redundantly written to stdout so that clean-up gets easier in the future.  For
 example, if the YubiHSM corresponding to `backup-1.txt` break: provision a new
 YubiHSM similar to the above, store `backup-3.txt` and delete `backup-1.txt`.
 
 ### Provision log server signing-oracle from backup
 
-    key-mgmt $ ./scripts/yhp-logsrv | tee logsrv-1.txt
-    *** INSERT YubiHSM to restore log server signing key from
-    ENTER to continue
-    *** FOUND YubiHSM, serial number XXXXXXXXXX
-    ENTER to continue
-    ENTER authkey passphrase: fdaf209618830d9ed9f5fb0f7af83068
-    ENTER wrapkey passphrase: b7924ea7eaf959d5b23d3ec5c68208a0
-    
-    *** INSERT YubiHSM to provision new logsrv signing oracle on (must be in factory-reset state)
-    ENTER to continue
-    *** FOUND YubiHSM, serial number ZZZZZZZZZZ
-    ENTER to continue
-    Found 2 object(s)
-    id: 0x00c8, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Logsrv authentication
-    id: 0x01f4, type: asymmetric-key, algo: ed25519, sequence: 0, label: Log server signing key
-    
-    logsrv_authkey_passphrase(ZZZZZZZZZZ)=35bb8bdb943620df860e5cf4c9dcf0cd
+    key-mgmt$ ./scripts/yhp-logsrv | tee logsrv-1.txt
 
 Repeat this for the number of log server nodes you have in production, e.g., 2.
 
 ### Provision witness signing-oracle from backup
 
     key-mgmt $ ./scripts/yhp-witness | tee witness.txt
-    *** INSERT YubiHSM to restore witness signing key from
-    ENTER to continue
-    *** FOUND YubiHSM, serial number XXXXXXXXXX
-    ENTER to continue
-    ENTER authkey passphrase: fdaf209618830d9ed9f5fb0f7af83068
-    ENTER wrapkey passphrase: b7924ea7eaf959d5b23d3ec5c68208a0
-    
-    *** INSERT YubiHSM to provision new witness signing oracle on (must be in factory-reset state)
-    ENTER to continue
-    *** FOUND YubiHSM, serial number TTTTTTTTTT
-    ENTER to continue
-    Found 2 object(s)
-    id: 0x012c, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: Witness authentication
-    id: 0x0258, type: asymmetric-key, algo: ed25519, sequence: 0, label: Witness signing key
-    
-    witness_authkey_passphrase(TTTTTTTTTT)=ea99fcdf59ae9328754a979e87c181fe
 
 ### Restore from backup in the future
 
@@ -225,6 +164,7 @@ for plugging YubiHSMs in and out of the provisioning machine.  Example below.
     #!/bin/bash
     
     set -eu
+    set -o pipefail
 
     ./scripts/yhp-keygen  | tee backup-1.txt
     export AUTHKEY_PASSPHRASE=$(grep backup_authkey_passphrase backup-1.txt | cut -d'=' -f2)
@@ -233,6 +173,14 @@ for plugging YubiHSMs in and out of the provisioning machine.  Example below.
     ./scripts/yhp-logsrv  | tee logsrv-1.txt
     ./scripts/yhp-logsrv  | tee logsrv-2.txt
     ./scripts/yhp-witness | tee witness.txt
+
+    echo ""
+    echo "OK"
+    echo ""
+    echo "Suggestion: diff -u backup-* # just different serial number"
+    echo "Suggestion: diff -u logsrv-* # just different serial number + passphrase"
+    echo "Suggestion: eyeball that backup-* and logsrv-* have the same log key"
+    echo "Suggestion: eyeball that backup-* and witness.txt have the same witness key"
 
 Replace `| tee` with `>` to avoid emitting sensitive information on stdout.
 
@@ -255,7 +203,7 @@ witnesses are not operated by the same day-to-day operations team.
 The `sigsum-agent` program is a tiny ssh-agent daemon that computes Ed25519
 signatures by interacting with the `yubihsm-connector` protocol on localhost. To
 use a key, you need an "auth-file" containing the auth-id (decimal number) and
-the corresponding passphrase, separated be a `:` character, and the key-id.
+the corresponding passphrase, separated by a `:` character, and the key-id.
 E.g., with the default configuration of these provisioning scripts, a log server
 key uses auth-id 200 and key-id 500, while a witness key uses auth-id 300 and
 key-id 600. An auth-file for the log server can be created using
@@ -274,5 +222,3 @@ The signature can be verified using
     $ ssh-keygen -q -Y check-novalidate -n test-namespace -f key.pub -s msg.sig < msg
 
 See `sigsum-agent --help` for details on the agent's options.
-
-**Note:** does not need to happen on the provisioning machine.

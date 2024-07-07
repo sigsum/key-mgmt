@@ -12,15 +12,24 @@ wrapkey_passphrase=${WRAPKEY_PASSPHRASE:-}
 ###
 # Internal
 ###
-wrap_file_log=logsrv.wrapped
-wrap_file_witness=witness.wrapped
+wrap_file_log=tmp.logsrv.wrapped
+wrap_file_witness=tmp.witness.wrapped
+log_pubkey_file=tmp.logsrv.pem
+log_signature_file=tmp.logsrv.signature
+witness_pubkey_file=tmp.witness.pem
+witness_signature_file=tmp.witness.signature
+message_file=tmp.message
+
+echo -n "git.glasklar.is/sigsum/core/key-mgmt testonly" > "$message_file"
 function clean_up() {
 	set +eu
 
 	shred -zun 12 "$wrap_file_log" >/dev/null 2>&1
 	shred -zun 12 "$wrap_file_witness" >/dev/null 2>&1
 
-	[[ -z $(pidof yubihsm-connector) ]] || warn "some yubihsm-connector is still running"
+	rm -f "$log_pubkey_file" "$log_signature_file"
+	rm -f "$witness_pubkey_file" "$witness_signature_file"
+	rm -f "$message_file"
 }
 
 function info() { echo "*** $*"      >&2;         }
@@ -30,6 +39,11 @@ function die()  { echo "ERROR: $*"   >&2; exit 1; }
 function yubihsm_probe() {
 	info "INSERT YubiHSM $1"
 	read -rp "ENTER to continue"
+
+	num_yubihsm=$(lsusb | grep YubiHSM | wc -l)
+	if [[ "$num_yubihsm" != 1 ]]; then
+		die "keep exactly one yubihsm plugged in at a time, have: $num_yubihsm"
+	fi
 
 	bus=$(lsusb | grep YubiHSM | cut -d' ' -f2)
 	device=$(lsusb | grep YubiHSM | cut -d' ' -f4)
@@ -49,6 +63,8 @@ function yubihsm_probe() {
 function yubihsm_shell() {
 	local pid
 	local tmp
+
+	[[ -z $(pidof yubihsm-connector) ]] || die "a yubihsm-connector is already running, please stop it and try again"
 
 	yubihsm-connector >/dev/null 2>&1 &
 	pid=$!
