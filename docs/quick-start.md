@@ -132,6 +132,13 @@ object stored on the YubiHSM.  That one object is a default authentication key.
 Expect to see, e.g., the authkey and wrapkey passphrases, as well as the
 generated public keys (one for the log server and another one for the witness).
 
+Note: the public keys are in PEM format.  Convert to hex as follows:
+
+    $ openssl pkey -pubin -in FILENAME -text -noout | \
+          sed -n '/^pub:/,$p' | \
+          grep -v '^pub:' | \
+          tr -d ' \n:' && echo ""
+
 ### Provision backup replica from backup
 
     key-mgmt$ ./scripts/yhp-backup | tee backup-2.txt
