@@ -58,6 +58,7 @@ func splitPublicKeyLine(ascii []byte) (string, []byte, string, error) {
 }
 
 // Parses an openssh single-line format public key.
+// TODO: Accept string input, or bytesOrString?
 func ParseAsciiEd25519PublicKey(ascii []byte) ([]byte, string, error) {
 	t, keyBase64, comment, err := splitPublicKeyLine(ascii)
 	if err != nil {
