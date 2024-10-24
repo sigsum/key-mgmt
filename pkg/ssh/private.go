@@ -64,7 +64,7 @@ func readEd25519PrivateKeyInner(r io.Reader, publicKeyBlob []byte) ([]byte, erro
 // Reads a binary private key file, i.e., after PEM decapsulation. On
 // success returns the concatenation of the private key and the public
 // key, which is compatible with crypto.ed25519.PrivateKey.
-func ReadEd25519PrivateKey(r io.Reader) ([]byte, error) {
+func readEd25519PrivateKey(r io.Reader) ([]byte, error) {
 	if err := readSkip(r, opensshPrivateKeyPrefix); err != nil {
 		return nil, fmt.Errorf("invalid or encrypted private key: %v", err)
 	}

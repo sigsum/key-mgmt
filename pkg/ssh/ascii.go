@@ -25,7 +25,7 @@ func ParseAsciiEd25519PrivateKey(ascii []byte) ([]byte, error) {
 	if block.Type != pemPrivateKeyTag {
 		return nil, fmt.Errorf("unexpected PEM tag: %q", block.Type)
 	}
-	return ParseBytes(block.Bytes, ReadEd25519PrivateKey)
+	return ParseBytes(block.Bytes, readEd25519PrivateKey)
 }
 
 // Split line into type, blob (base64), comment (optional),

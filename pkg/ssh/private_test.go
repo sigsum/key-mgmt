@@ -24,7 +24,7 @@ func TestSerializeEd25519PrivateKey(t *testing.T) {
 	if !bytes.Equal(keyBlob, expBlob) {
 		t.Errorf("unexpected key blob:\n%x", keyBlob)
 	}
-	got, err := ReadEd25519PrivateKey(bytes.NewBuffer(keyBlob))
+	got, err := readEd25519PrivateKey(bytes.NewBuffer(keyBlob))
 	if err != nil {
 		t.Fatalf("failed to parse private key file: %v", err)
 	}
