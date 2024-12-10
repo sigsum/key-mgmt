@@ -7,13 +7,13 @@ You may use it to manage private Ed25519 keys for log servers and witnesses.
 
 ## Preliminaries
 
-Read Yubico's introductory documentation on [YubiHSM 2 User Guide][].  Pay extra
-close attention to "[Core Concepts][]" and "[YubiHSM Command Reference][]".
-You may also find it helpful to read the [Quick Start Tutorial][], as it shows
-some interactive example usage.
+Basic understanding of how Yubico's YubiHSM 2 works.  For orientation, take a
+look at Yubico's [quickstart tutorial][] and the [YubiHSM 2 user guide][].  Pay
+extra close attention to "[Core Concepts][]" and "[YubiHSM Command
+Reference][]".
 
 [YubiHSM 2 User Guide]: https://docs.yubico.com/hardware/yubihsm-2/hsm-2-user-guide/index.html
-[Quick Start Tutorial]: https://docs.yubico.com/hardware/yubihsm-2/hsm-2-user-guide/hsm2-quick-start.html
+[quickstart tutorial]: https://docs.yubico.com/hardware/yubihsm-2/hsm-2-user-guide/hsm2-quick-start.html
 [Core Concepts]: https://docs.yubico.com/hardware/yubihsm-2/hsm-2-user-guide/hsm2-core-concepts.html
 [YubiHSM Command Reference]: https://docs.yubico.com/hardware/yubihsm-2/hsm-2-user-guide/hsm2-cmd-reference.html
 
