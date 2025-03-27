@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -17,7 +18,8 @@ import (
 
 	"github.com/pborman/getopt/v2"
 
-	"sigsum.org/key-mgmt/internal/agent"
+	"git.glasklar.is/nisse/ssh-util-poc/pkg/agent"
+	"git.glasklar.is/nisse/ssh-util-poc/pkg/ssh"
 	"sigsum.org/key-mgmt/internal/hsm"
 )
 
@@ -168,7 +170,7 @@ stdout, they are written as one line each, pid first.
 	var signer crypto.Signer
 	if len(keyFile) > 0 {
 		var err error
-		signer, err = agent.ReadPrivateKeyFile(keyFile)
+		signer, err = readPrivateKeyFile(keyFile)
 		if err != nil {
 			return 0, fmt.Errorf("Reading private key file %q failed: %v", keyFile, err)
 		}
@@ -198,11 +200,11 @@ stdout, they are written as one line each, pid first.
 		signer = hsmSigner
 	}
 
-	sshKey, sshSign, err := agent.SSHFromEd25519(signer)
+	sshKey, sshSign, err := agent.NewEd25519Signer(signer)
 	if err != nil {
 		return 0, fmt.Errorf("Internal error: %v", err)
 	}
-	keys := map[string]agent.SSHSign{sshKey: sshSign}
+	keys := map[string]agent.Signer{sshKey: sshSign}
 
 	if len(set.Args()) > 0 {
 		go runAgent(socket, keys)
@@ -280,7 +282,7 @@ func openSocket(socketName string) (net.Listener, error) {
 
 // Accepts connections, and spawns a serving goroutine for each. Will
 // return when the listening socket is closed under its feet.
-func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
+func runAgent(socket net.Listener, keys map[string]agent.Signer) {
 	for {
 		c, err := socket.Accept()
 		if err != nil {
@@ -289,7 +291,7 @@ func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
 			// good way to check for that.
 			return
 		}
-		go agent.ServeAgent(c, c, keys)
+		go agent.Serve(c, c, keys)
 	}
 }
 
@@ -319,4 +321,16 @@ func writePidFile(file string, pid int) (bool, error) {
 		return false, fmt.Errorf("failed creating pid file: %v", err)
 	}
 	return false, nil
+}
+
+func readPrivateKeyFile(keyFile string) (crypto.Signer, error) {
+	fileData, err := os.ReadFile(keyFile)
+	if err != nil {
+		return nil, err
+	}
+	privateKey, err := ssh.ParseAsciiEd25519PrivateKey(fileData)
+	if err != nil {
+		return nil, err
+	}
+	return ed25519.PrivateKey(privateKey), nil
 }

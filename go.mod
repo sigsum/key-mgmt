@@ -1,11 +1,11 @@
 module sigsum.org/key-mgmt
 
-go 1.19
+go 1.22
 
 require (
+	git.glasklar.is/nisse/ssh-util-poc v0.0.0
 	github.com/certusone/yubihsm-go v0.3.0
 	github.com/pborman/getopt/v2 v2.1.0
-	sigsum.org/sigsum-go v0.7.0
 )
 
 require (
