@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/pborman/getopt/v2"
 
@@ -190,7 +191,7 @@ stdout, they are written as one line each, pid first.
 			return 0, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
 		}
 		authPassword := string(buf[colon+1:])
-		hsmSigner, err := hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId))
 		if err != nil {
 			return 0, fmt.Errorf("Connecting to hsm failed: %v", err)
 		}
@@ -276,6 +277,25 @@ func openSocket(socketName string) (net.Listener, error) {
 	defer syscall.Umask(oldMask)
 
 	return net.Listen("unix", socketName)
+}
+
+// We need the connector to be up and running, to initialize and
+// retrieve the public key. Retry a few times, in case the connector
+// is just being started.
+func openHSM(connector string, authId uint16, authPassword string, keyId uint16) (*hsm.YubiHSMSigner, error) {
+	hsmSigner, err := hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+	if err == nil {
+		return hsmSigner, nil
+	}
+	for _, delay := range []int{1, 2, 4, 8} {
+		fmt.Printf("Connecting to HSM failed: %v, retrying in %d seconds", err, delay)
+		time.Sleep(time.Duration(delay) * time.Second)
+		hsmSigner, err = hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+		if err == nil {
+			return hsmSigner, nil
+		}
+	}
+	return nil, fmt.Errorf("Connecting to HSM failed: %v", err)
 }
 
 // Accepts connections, and spawns a serving goroutine for each. Will
