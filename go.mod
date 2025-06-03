@@ -1,5 +1,6 @@
 module sigsum.org/key-mgmt
 
+// When updating, also update docs/quick-start.md.
 go 1.22
 
 require (
