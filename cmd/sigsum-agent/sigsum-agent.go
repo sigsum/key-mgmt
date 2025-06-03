@@ -288,7 +288,7 @@ func openHSM(connector string, authId uint16, authPassword string, keyId uint16)
 		return hsmSigner, nil
 	}
 	for _, delay := range []int{1, 2, 4, 8} {
-		fmt.Printf("Connecting to HSM failed: %v, retrying in %d seconds", err, delay)
+		log.Printf("Connecting to HSM failed: %v, retrying in %d seconds", err, delay)
 		time.Sleep(time.Duration(delay) * time.Second)
 		hsmSigner, err = hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
 		if err == nil {
