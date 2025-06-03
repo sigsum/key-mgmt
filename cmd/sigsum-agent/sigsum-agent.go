@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/pborman/getopt/v2"
 
@@ -94,6 +95,7 @@ stdout, they are written as one line each, pid first.
 	keyFile := ""
 	socketName := ""
 	pidFile := ""
+	retry := false
 	help := false
 
 	set := getopt.New()
@@ -105,6 +107,7 @@ stdout, they are written as one line each, pid first.
 	set.FlagLong(&keyFile, "key-file", 'k', "private key file")
 	set.FlagLong(&socketName, "socket-name", 's', "name of unix socket")
 	set.FlagLong(&pidFile, "pid-file", 0, "for writing pid of agent or command, '-' means stdout")
+	set.FlagLong(&retry, "retry", 0, "retry a few times if connecting to the HSM fails at startup")
 	set.FlagLong(&help, "help", 'h', "Display help")
 
 	err := set.Getopt(os.Args, nil)
@@ -190,7 +193,7 @@ stdout, they are written as one line each, pid first.
 			return 0, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
 		}
 		authPassword := string(buf[colon+1:])
-		hsmSigner, err := hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
 		if err != nil {
 			return 0, fmt.Errorf("Connecting to hsm failed: %v", err)
 		}
@@ -276,6 +279,28 @@ func openSocket(socketName string) (net.Listener, error) {
 	defer syscall.Umask(oldMask)
 
 	return net.Listen("unix", socketName)
+}
+
+// We need the connector to be up and running, to initialize and
+// retrieve the public key. Optionally retry a few times, in case the
+// connector is just being started.
+func openHSM(connector string, authId uint16, authPassword string, keyId uint16, retry bool) (*hsm.YubiHSMSigner, error) {
+	hsmSigner, err := hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+	if err == nil {
+		return hsmSigner, nil
+	}
+	if !retry {
+		return nil, err
+	}
+	for _, delay := range []int{1, 2, 4, 8} {
+		log.Printf("Connecting to HSM failed: %v, retrying in %d seconds", err, delay)
+		time.Sleep(time.Duration(delay) * time.Second)
+		hsmSigner, err = hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+		if err == nil {
+			return hsmSigner, nil
+		}
+	}
+	return nil, fmt.Errorf("Connecting to HSM failed: %v", err)
 }
 
 // Accepts connections, and spawns a serving goroutine for each. Will
