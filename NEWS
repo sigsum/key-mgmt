@@ -1,4 +1,4 @@
-NEWS for key-mgmt v0.2.x
+NEWS for key-mgmt v0.2.5
 
     This release includes a workaround for issues when sigsum-agent
     and yubihsm-connector are started or restarted concurrently.
@@ -13,7 +13,8 @@ NEWS for key-mgmt v0.2.3
     Glasklar Teknik AB.
 
     * provisioning: Improve provisioning scripts and documentation
-      thereof.
+      thereof. E.g., include provisioned public keys in output files,
+      and do test signatures and validation.
 
 NEWS for key-mgmt v0.2.1
 
@@ -36,9 +37,9 @@ NEWS for key-mgmt v0.1.0
 
     Features:
 
-    * Documentation on manging secret keys for log servers and witnesses
+    * Documentation on managing secret keys for log servers and witnesses.
 
-    * Scripts to reset, provision, and reprovision YubiHSMs from backup
+    * Scripts to reset, provision, and reprovision YubiHSMs from backup.
 
     * A yubihsm-agent program that can use either a locally plugged-in
       YubiHSM or a private key on disk, and make it available via the
