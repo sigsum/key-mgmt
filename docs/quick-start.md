@@ -95,7 +95,7 @@ keys work by signing a fixed message which is then verified using `openssl`.
 
 ## Install sigsum-agent
 
-Install [Go's toolchain][].  You need at least version 1.19.  You may find
+Install [Go's toolchain][].  You need at least version 1.22.  You may find
 packaged versions of Go in your distribution.  For example, on Debian 12:
 
     apt install golang-go

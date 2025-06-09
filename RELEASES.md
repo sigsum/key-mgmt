@@ -7,13 +7,15 @@ The following programs are releases and supported:
   - `scripts/`
   - `cmd/sigsum-agent`
 
-Releases are announced on the [sigsum-announce][] mailing list. The [NEWS
-file](./NEWS) documents the user visible changes for each release, the
-recommended upgrade procedure, and components tested for interoperability.
+Releases are announced on the [sigsum-announce][] mailing list. The
+[NEWS file][] documents the user visible changes for each
+release, the recommended upgrade procedure, and components tested for
+interoperability.
 
-Note that a release is simply a git-tag specified on our mailing list.  There
-may be intermediate git-tags between two advertised releases.  These
-intermediate tags are **not** released and supported.
+Note that a release is simply a git-tag documented in the [NEWS
+file][] file and announced on the [sigsum-announce][] mailing list.
+There may be intermediate git-tags between two advertised releases.
+These intermediate tags are **not** released and supported.
 
 The key-mgmt Go module only contains internal libraries.  By the terms of the
 LICENSE file you are free to use this code "as is" in almost any way you like.
@@ -24,6 +26,7 @@ We encourage use of the key management strategy described in this repository,
 including use of the released scripts for provisioning and `sigsum-agent` to
 integrate with the SSH-agent protocol that Sigsum logs and witnesses support.
 
+[NEWS file]: ./NEWS
 [sigsum-announce]: https://lists.sigsum.org/mailman3/postorius/lists/sigsum-announce.lists.sigsum.org/
 
 ## What release cycle is used
@@ -41,7 +44,7 @@ You are expected to upgrade linearly from one advertised release to the next
 advertised release, e.g., from v0.1.2 to v0.3.6.  We strive to make such linear
 upgrades easy and well-documented to help with forward-compatibility.  Any
 complications that are caused by changed command-line flags or similar will be
-outlined clearly in the [NEWS files](./NEWS).  Pay close attention to the
+outlined clearly in the [NEWS file][].  Pay close attention to the
 "Breaking changes" section for these migration notes (if any).
 
 ## Planned changes

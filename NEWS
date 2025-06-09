@@ -1,14 +1,47 @@
-NEWS for key-mgmt v0.0.X
+NEWS for key-mgmt v0.2.5
+
+    This release includes a workaround for issues when sigsum-agent
+    and yubihsm-connector are started or restarted concurrently.
+
+    * sigsum-agent: New --retry option, to retry connecting to the
+      yubihsm connector at startup.
+
+NEWS for key-mgmt v0.2.3
+
+    This release improves provisioning, and corresponds to the
+    provisioning of log and witness keys for the services operated by
+    Glasklar Teknik AB.
+
+    * provisioning: Improve provisioning scripts and documentation
+      thereof. E.g., include provisioned public keys in output files,
+      and do test signatures and validation.
+
+NEWS for key-mgmt v0.2.1
+
+    This release includes improvements for the sigsum-agent tool.
+
+    Incompatible changes:
+
+    * sigsum-agent: New name, renamed from yubihsm-agent.
+
+    Features:
+
+    * sigsum-agent: Print socket name to stdout only if the agent
+      generated a random name, and it is running as a daemon.
+
+    * sigsum-agent: Add support for writing a pid file.
+
+NEWS for key-mgmt v0.1.0
 
     Initial release of key-mgmt.
 
     Features:
 
-    * Documentation on manging secret keys for log servers and witnesses
-    * Scripts to reset, provision, and reprovision YubiHSMs from backup
-    * A sigsum-agent program that can use either a locally plugged-in
+    * Documentation on managing secret keys for log servers and witnesses.
+
+    * Scripts to reset, provision, and reprovision YubiHSMs from backup.
+
+    * A yubihsm-agent program that can use either a locally plugged-in
       YubiHSM or a private key on disk, and make it available via the
       SSH agent protocol.  Only Ed25519 signing is supported.
 
-    XXX: specify what tooling versions we've tested against
-    XXX: link ssh agent protocol spec
