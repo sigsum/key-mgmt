@@ -6,6 +6,16 @@ complementary demo on how to do the provisioning and sign with `sigsum-agent`.
 
 ## Install the YubiHSM tools
 
+Three possible installation methods are described below: installing
+from Debian Backports, installing from source, and installing Yubico's
+binary packages. You can use either of those methods.
+
+### Installing from Debian Backports
+
+If you are using Debian 12 (bookworm) you can install the
+yubihsm-connector package from bookworm-backports. See
+https://backports.debian.org/Instructions/
+
 ### Installing from source
 
 To install `yubihsm-connector` (just go install does not work):
