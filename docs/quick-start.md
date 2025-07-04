@@ -175,7 +175,7 @@ This is in no way different from the initial provisioning.  Simply use
 
 ### Automate all provisioning scripts
 
-You might want to put together your own script that automates everything expect
+You might want to put together your own script that automates everything except
 for plugging YubiHSMs in and out of the provisioning machine.  Example below.
 
     #!/bin/bash
