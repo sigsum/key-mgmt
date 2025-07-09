@@ -26,8 +26,8 @@ yubihsm_shell << EOF
 	generate asymmetric 0 "$LOGSRV_SIGNING_KEY_ID"  "$LOGSRV_SIGNING_KEY_LABEL"  "$LOGSRV_SIGNING_DOMAIN"  exportable-under-wrap,sign-eddsa ed25519
 	generate asymmetric 0 "$WITNESS_SIGNING_KEY_ID" "$WITNESS_SIGNING_KEY_LABEL" "$WITNESS_SIGNING_DOMAIN" exportable-under-wrap,sign-eddsa ed25519
 
-	get pubkey 0 "$LOGSRV_SIGNING_KEY_ID"  "$log_pubkey_file"
-	get pubkey 0 "$WITNESS_SIGNING_KEY_ID" "$witness_pubkey_file"
+	get pubkey 0 "$LOGSRV_SIGNING_KEY_ID"  asymmetric-key "$log_pubkey_file"
+	get pubkey 0 "$WITNESS_SIGNING_KEY_ID" asymmetric-key "$witness_pubkey_file"
 
 	sign eddsa 0 "$LOGSRV_SIGNING_KEY_ID"  ed25519 "$message_file" "$log_signature_file"
 	sign eddsa 0 "$WITNESS_SIGNING_KEY_ID" ed25519 "$message_file" "$witness_signature_file"
