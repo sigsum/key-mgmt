@@ -13,8 +13,8 @@ binary packages. You can use either of those methods.
 ### Installing from Debian Backports
 
 If you are using Debian 12 (bookworm) you can install the
-`yubihsm-connector` package from `bookworm-backports`. See
-https://backports.debian.org/Instructions/
+`yubihsm-connector` and `yubihsm-shell` packages from
+`bookworm-backports`. See https://backports.debian.org/Instructions/
 
 ### Installing from source
 
