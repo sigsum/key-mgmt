@@ -12,7 +12,7 @@ trap clean_up EXIT
 ###
 # Generate keys to provision first backup
 ###
-id=$(yubihsm_probe "keygen and initial backup provisioning")
+id=$(yubihsm_probe "for keygen and initial backup provisioning")
 authkey_pass=$(yubihsm_get_passphrase 1 password)
 wrapkey_pass=$(yubihsm_get_passphrase 1 password)
 
