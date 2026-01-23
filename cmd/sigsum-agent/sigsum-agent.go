@@ -22,8 +22,6 @@ import (
 	"sigsum.org/key-mgmt/internal/hsm"
 )
 
-const sshAgentEnv = "SSH_AUTH_SOCK"
-
 // Since we need to call os.Exit to pass an exit code, we need a
 // simple main function without any defer.
 func main() {
@@ -47,7 +45,7 @@ file is a single line with the the authorization id (decimal number),
 and the corresponding passphrase, separated by a single ':' character.
 
 When using a yubihsm key, the agent needs a separate yubihsm-connector
-process to be run running. By default, the connector is expected to
+process to be running. By default, the connector is expected to
 listen on TCP port 12345 on localhost, but this can be changed with
 the -c option.
 
@@ -285,7 +283,7 @@ func openSocket(socketName string) (net.Listener, error) {
 // retrieve the public key. Optionally retry a few times, in case the
 // connector is just being started.
 func openHSM(connector string, authId uint16, authPassword string, keyId uint16, retry bool) (*hsm.YubiHSMSigner, error) {
-	hsmSigner, err := hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+	hsmSigner, err := hsm.NewYubiHSMSigner(connector, authId, authPassword, keyId)
 	if err == nil {
 		return hsmSigner, nil
 	}
@@ -295,7 +293,7 @@ func openHSM(connector string, authId uint16, authPassword string, keyId uint16,
 	for _, delay := range []int{1, 2, 4, 8} {
 		log.Printf("Connecting to HSM failed: %v, retrying in %d seconds", err, delay)
 		time.Sleep(time.Duration(delay) * time.Second)
-		hsmSigner, err = hsm.NewYubiHSMSigner(connector, uint16(authId), authPassword, uint16(keyId))
+		hsmSigner, err = hsm.NewYubiHSMSigner(connector, authId, authPassword, keyId)
 		if err == nil {
 			return hsmSigner, nil
 		}
