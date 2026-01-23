@@ -16,10 +16,17 @@ yubihsm_probe "to restore log server signing key from" >/dev/null
 [[ -z "$wrapkey_passphrase" ]] && read -rp "ENTER wrapkey passphrase: " wrapkey_passphrase
 logsrv_authkey_passphrase=$(yubihsm_get_passphrase "$BACKUP_AUTH_ID" "$authkey_passphrase")
 
+compability1=""
+compability2=""
+if [[ "$yubihsm_version" > "2.5.0" ]]; then
+  compability1=0
+  compability2=asymmetric-key
+fi
+
 yubihsm_shell << EOF
 	connect
 	session open      "$BACKUP_AUTH_ID"  "$authkey_passphrase"
-	get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$LOGSRV_SIGNING_KEY_ID" "$wrap_file_log"
+	get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$LOGSRV_SIGNING_KEY_ID" $compability1 "$wrap_file_log"
 	session close   0
 EOF
 
@@ -36,7 +43,7 @@ yubihsm_shell << EOF
 	put     wrapkey 0 "$WRAPPING_KEY_ID" "$WRAPPING_KEY_LABEL" "$LOGSRV_SIGNING_DOMAIN" import-wrapped,export-wrapped exportable-under-wrap,sign-eddsa "$wrapkey_passphrase"
 	put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_log"
 
-	get pubkey 0 "$LOGSRV_SIGNING_KEY_ID" "$log_pubkey_file"
+	get pubkey 0 "$LOGSRV_SIGNING_KEY_ID" $compability2 "$log_pubkey_file"
 	sign eddsa 0 "$LOGSRV_SIGNING_KEY_ID" ed25519 "$message_file" "$log_signature_file"
 
 	delete          0 "$WRAPPING_KEY_ID" wrap-key

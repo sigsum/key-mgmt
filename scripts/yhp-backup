@@ -16,12 +16,19 @@ id=$(yubihsm_probe "to create a backup replica from")
 [[ -z "$authkey_passphrase" ]] && read -rp "ENTER authkey passphrase: " authkey_passphrase
 [[ -z "$wrapkey_passphrase" ]] && read -rp "ENTER wrapkey passphrase: " wrapkey_passphrase
 
+compability1=""
+compability2=""
+if [[ "$yubihsm_version" > "2.5.0" ]]; then
+  compability1=0
+  compability2=asymmetric-key
+fi
+
 yubihsm_shell << EOF
     connect
     session open "$BACKUP_AUTH_ID" "$authkey_passphrase"
 
-    get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$LOGSRV_SIGNING_KEY_ID"  "$wrap_file_log"
-    get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$WITNESS_SIGNING_KEY_ID" "$wrap_file_witness"
+    get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$LOGSRV_SIGNING_KEY_ID" $compability1 "$wrap_file_log"
+    get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$WITNESS_SIGNING_KEY_ID" $compability1 "$wrap_file_witness"
 
     session close   0
 EOF
@@ -39,8 +46,8 @@ yubihsm_shell << EOF
     put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_log"
     put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_witness"
 
-    get pubkey 0 "$LOGSRV_SIGNING_KEY_ID"  "$log_pubkey_file"
-    get pubkey 0 "$WITNESS_SIGNING_KEY_ID" "$witness_pubkey_file"
+    get pubkey 0 "$LOGSRV_SIGNING_KEY_ID" $compability2 "$log_pubkey_file"
+    get pubkey 0 "$WITNESS_SIGNING_KEY_ID" $compability2 "$witness_pubkey_file"
 
     sign eddsa 0 "$LOGSRV_SIGNING_KEY_ID"  ed25519 "$message_file" "$log_signature_file"
     sign eddsa 0 "$WITNESS_SIGNING_KEY_ID" ed25519 "$message_file" "$witness_signature_file"
