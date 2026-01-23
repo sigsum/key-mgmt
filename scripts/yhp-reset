@@ -3,7 +3,7 @@
 set -eu
 
 cd "$(dirname "$0")"
-. common # gain access to a few helpers
+. ./common # gain access to a few helpers
 
 ###
 # Prompt the user to factory-reset

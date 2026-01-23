@@ -3,8 +3,8 @@
 set -eu
 
 cd "$(dirname "$0")"
-. config # loads constants for YubiHSM object IDs and such
-. common # loads helpers and reads environment variables
+. ./config # loads constants for YubiHSM object IDs and such
+. ./common # loads helpers and reads environment variables
 rm -f "$log_pubkey_file" "$log_signature_file" # extracted from yubihsm
 rm -f "$witness_pubkey_file" "$witness_signature_file" # extracted from yubihsm
 trap clean_up EXIT
