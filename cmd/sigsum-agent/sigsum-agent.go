@@ -303,6 +303,11 @@ func openHSM(connector string, authId uint16, authPassword string, keyId uint16,
 	return nil, fmt.Errorf("Connecting to HSM failed: %v", err)
 }
 
+func serveAndClose(c net.Conn, keys map[string]agent.SSHSign) {
+	defer c.Close()
+	agent.ServeAgent(c, c, keys)
+}
+
 // Accepts connections, and spawns a serving goroutine for each. Will
 // return when the listening socket is closed under its feet.
 func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
@@ -314,7 +319,7 @@ func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
 			// good way to check for that.
 			return
 		}
-		go agent.ServeAgent(c, c, keys)
+		go serveAndClose(c, keys)
 	}
 }
 
