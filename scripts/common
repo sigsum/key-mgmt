@@ -24,6 +24,11 @@ message_file=tmp.message
 yubihsm_version=$(yubihsm-shell --version)
 yubihsm_version=${yubihsm_version##"yubihsm-shell "}
 
+# version_gt $a $b checks that $a > b$ as version numbers
+function version_gt() {
+    [[ "$1" != "$2" ]] && (echo "$1" ; echo "$2") | sort -rVC
+}
+
 echo -n "git.glasklar.is/sigsum/core/key-mgmt testonly" > "$message_file"
 function clean_up() {
 	set +eu

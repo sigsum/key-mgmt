@@ -10,7 +10,7 @@ trap clean_up EXIT
 
 compability1=""
 compability2=""
-if [[ "$yubihsm_version" > "2.5.0" ]]; then
+if version_gt "$yubihsm_version" "2.5.0"; then
   compability1=0
   compability2=asymmetric-key
 fi

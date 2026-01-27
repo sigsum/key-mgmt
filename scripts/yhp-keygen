@@ -17,7 +17,7 @@ authkey_pass=$(yubihsm_get_passphrase 1 password)
 wrapkey_pass=$(yubihsm_get_passphrase 1 password)
 
 compability=""
-if [[ "$yubihsm_version" > "2.5.0" ]]; then
+if version_gt "$yubihsm_version" "2.5.0"; then
   compability=asymmetric-key
 fi
 
