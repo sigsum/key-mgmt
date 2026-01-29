@@ -3,7 +3,7 @@
 set -eu
 
 cd "$(dirname "$0")"
-. common # gain access to a few helpers
+. ./common # gain access to a few helpers
 
 ###
 # Prompt the user to factory-reset
@@ -24,7 +24,7 @@ yubihsm_shell << EOF >"$tmp"
 EOF
 
 want_found="Found 1 object(s)" 
-want_obj="id: 0x0001, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0 label: DEFAULT AUTHKEY CHANGE THIS ASAP" 
+want_obj="id: 0x0001, type: authentication-key, algo: aes128-yubico-authentication, sequence: 0, label: DEFAULT AUTHKEY CHANGE THIS ASAP"
 err_msg="your attempt to factory-reset with a 10s TOUCH failed, try again"
 
 grep -q -e "$want_found" "$tmp" || die "$err_msg"

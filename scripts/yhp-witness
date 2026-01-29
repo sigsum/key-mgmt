@@ -3,10 +3,17 @@
 set -eu
 
 cd "$(dirname "$0")"
-. config # loads constants for YubiHSM object IDs and such
-. common # loads helpers and reads environment variables
+. ./config # loads constants for YubiHSM object IDs and such
+. ./common # loads helpers and reads environment variables
 rm -f "$witness_pubkey_file" "$witness_signature_file" # extracted from yubihsm
 trap clean_up EXIT
+
+compability1=""
+compability2=""
+if version_gt "$yubihsm_version" "2.5.0"; then
+  compability1=0
+  compability2=asymmetric-key
+fi
 
 ###
 # Read backup
@@ -19,7 +26,7 @@ witness_authkey_passphrase=$(yubihsm_get_passphrase "$BACKUP_AUTH_ID" "$authkey_
 yubihsm_shell << EOF
 	connect
 	session open      "$BACKUP_AUTH_ID"  "$authkey_passphrase"
-	get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$WITNESS_SIGNING_KEY_ID" "$wrap_file_witness"
+	get     wrapped 0 "$WRAPPING_KEY_ID" asymmetric-key "$WITNESS_SIGNING_KEY_ID" $compability1 "$wrap_file_witness"
 	session close   0
 EOF
 
@@ -36,7 +43,7 @@ yubihsm_shell << EOF
 	put     wrapkey 0 "$WRAPPING_KEY_ID" "$WRAPPING_KEY_LABEL" "$WITNESS_SIGNING_DOMAIN" import-wrapped,export-wrapped exportable-under-wrap,sign-eddsa "$wrapkey_passphrase"
 	put     wrapped 0 "$WRAPPING_KEY_ID" "$wrap_file_witness"
 
-	get pubkey 0 "$WITNESS_SIGNING_KEY_ID" "$witness_pubkey_file"
+	get pubkey 0 "$WITNESS_SIGNING_KEY_ID" $compability2 "$witness_pubkey_file"
 	sign eddsa 0 "$WITNESS_SIGNING_KEY_ID" ed25519 "$message_file" "$witness_signature_file"
 
 	delete          0 "$WRAPPING_KEY_ID" wrap-key
