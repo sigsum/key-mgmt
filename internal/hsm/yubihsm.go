@@ -31,7 +31,17 @@ func NewYubiHSMSigner(conn string /* host:port */, authId uint16, authPassword s
 }
 
 func (hsm *YubiHSMSigner) Sign(_ io.Reader, msg []byte, _ crypto.SignerOpts) ([]byte, error) {
-	return sign(hsm.session, hsm.keyId, msg)
+	signature, err := sign(hsm.session, hsm.keyId, msg)
+	if err != nil {
+		return nil, err
+	}
+	// Check that signature is valid: an invalid signature could
+	// be sign of a fault attack on the HSM, and leak information
+	// about the private key.
+	if !ed25519.Verify(hsm.publicKey, msg, signature) {
+		return nil, fmt.Errorf("invalid signature from the hsm")
+	}
+	return signature, nil
 }
 
 func (hsm *YubiHSMSigner) Public() crypto.PublicKey {
