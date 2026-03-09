@@ -5,9 +5,11 @@
 #
 #   - AUTHKEY_PASSPHRASE: authkey passphrase configured on a backup YubiHSM
 #   - WRAPKEY_PASSPHRASE: wrapkey passphrase configured on a backup YubiHSM
+#   - KEY_ID:             object ID (to select which witness key to provision)
 ###
 authkey_passphrase=${AUTHKEY_PASSPHRASE:-}
 wrapkey_passphrase=${WRAPKEY_PASSPHRASE:-}
+key_id=${KEY_ID:-}
 
 ###
 # Internal
@@ -37,7 +39,7 @@ function clean_up() {
 	shred -zun 12 "$wrap_file_witness"{,.g1,.g2,.g3} >/dev/null 2>&1
 
 	rm -f "$log_pubkey_file" "$log_signature_file"
-	rm -f "$witness_pubkey_file"{,.g1,.g2,.g3} "$witness_signature_file"{,.g1,.g2,.g3}
+	rm -f "$witness_pubkey_file"{,.g1,.g2,.g3,.test} "$witness_signature_file"{,.g1,.g2,.g3,.test}
 	rm -f "$message_file"
 }
 
