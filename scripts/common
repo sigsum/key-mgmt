@@ -37,7 +37,7 @@ function clean_up() {
 	shred -zun 12 "$wrap_file_witness" >/dev/null 2>&1
 
 	rm -f "$log_pubkey_file" "$log_signature_file"
-	rm -f "$witness_pubkey_file" "$witness_signature_file"
+	rm -f "$witness_pubkey_file"{,.g1,.g2,.g3} "$witness_signature_file"{,.g1,.g2,.g3}
 	rm -f "$message_file"
 }
 
