@@ -14,8 +14,8 @@ key_id=${KEY_ID:-}
 ###
 # Internal
 ###
-wrap_file_log=tmp.logsrv.wrapped
-wrap_file_witness=tmp.witness.wrapped
+wrap_file_log=/dev/shm/tmp.logsrv.wrapped
+wrap_file_witness=/dev/shm/tmp.witness.wrapped
 log_pubkey_file=tmp.logsrv.pem
 log_signature_file=tmp.logsrv.signature
 witness_pubkey_file=tmp.witness.pem
