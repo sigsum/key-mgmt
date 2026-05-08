@@ -295,6 +295,7 @@ func openHSM(connector string, authId uint16, authPassword string, keyId uint16,
 		time.Sleep(time.Duration(delay) * time.Second)
 		hsmSigner, err = hsm.NewYubiHSMSigner(connector, authId, authPassword, keyId)
 		if err == nil {
+			log.Printf("Connected to HSM")
 			return hsmSigner, nil
 		}
 	}
