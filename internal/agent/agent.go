@@ -128,12 +128,23 @@ func ReadRequests(r io.Reader, keys map[string]SSHSign, exitCh chan error, respo
 
 // Writes responses in the correct order, based on sequence numbers
 func WriteResponses(w io.Writer, exitCh chan error, responseCh chan response) error {
+	nextSequenceNumberToWrite := 1
+	pendingResponses := map[int]response{}
 	for {
-		response := <-responseCh
-		// TODO: check sequenceNumber and write responses in the right order
-		rspData := response.data
-		if err := writeString(w, rspData); err != nil {
-			return err
+		newResponse := <-responseCh
+		pendingResponses[newResponse.sequenceNumber] = newResponse
+		// Write as many responses as we can
+		for {
+			rsp, ok := pendingResponses[nextSequenceNumberToWrite]
+			if ok == false {
+				// We don't have the right sequence number, so we don't write anything more.
+				break
+			}
+			if err := writeString(w, rsp.data); err != nil {
+				return err
+			}
+			delete(pendingResponses, nextSequenceNumberToWrite)
+			nextSequenceNumberToWrite = nextSequenceNumberToWrite + 1
 		}
 	}
 }
