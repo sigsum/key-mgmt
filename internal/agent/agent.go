@@ -26,6 +26,11 @@ type signRequest struct {
 	data   []byte
 }
 
+type response struct {
+	data           []byte
+	sequenceNumber int
+}
+
 func readSignRequest(r io.Reader) (req signRequest, err error) {
 	req.pubKey, err = readString(r, maxSize)
 	if err != nil {
@@ -42,54 +47,92 @@ func readSignRequest(r io.Reader) (req signRequest, err error) {
 
 // The map keys are SSH public key blobs (without outer length field).
 func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
-	for {
-		data, err := readString(r, maxSize)
+	// The exitCh channel is used in case of error
+	exitCh := make(chan error, 1)
+	responseCh := make(chan response, 100)
+	go ReadRequests(r, keys, exitCh, responseCh)
+	go WriteResponses(w, exitCh, responseCh)
+	err := <-exitCh
+	log.Printf("ServeAgent error: %v", err)
+	return err
+}
+
+// Handles a single request
+func HandleRequest(keys map[string]SSHSign, data []byte, sequenceNumber int, responseCh chan response) error {
+	t, msg := data[0], data[1:]
+	// The write methods on bytes.Buffer are documented to
+	// always return a nil error. Therefore all related
+	// error return values below are ignored.
+	var rsp bytes.Buffer
+	switch t {
+	case SSH_AGENTC_REQUEST_IDENTITIES:
+		if len(msg) > 0 {
+			return fmt.Errorf("invalid message, %d left-over bytes in list request", len(msg))
+		}
+		rsp.WriteByte(SSH_AGENT_IDENTITIES_ANSWER)
+		writeUint32(&rsp, uint32(len(keys)))
+		for k, _ := range keys {
+			writeString(&rsp, k)
+			// Arbitrary comment
+			writeString(&rsp, "oracle key")
+		}
+	case SSH_AGENTC_SIGN_REQUEST:
+		req, err := parseBytes(msg, nil, readSignRequest)
 		if err != nil {
 			return err
 		}
-		if len(data) == 0 {
-			return fmt.Errorf("invalid empty agent message")
-		}
-		t, msg := data[0], data[1:]
-		// The write methods on bytes.Buffer are documented to
-		// always return a nil error. Therefore all related
-		// error return values below are ignored.
-		var rsp bytes.Buffer
-		switch t {
-		case SSH_AGENTC_REQUEST_IDENTITIES:
-			if len(msg) > 0 {
-				return fmt.Errorf("invalid message, %d left-over bytes in list request", len(msg))
-			}
-
-			rsp.WriteByte(SSH_AGENT_IDENTITIES_ANSWER)
-			writeUint32(&rsp, uint32(len(keys)))
-			for k, _ := range keys {
-				writeString(&rsp, k)
-				// Arbitrary comment
-				writeString(&rsp, "oracle key")
-			}
-		case SSH_AGENTC_SIGN_REQUEST:
-			req, err := parseBytes(msg, nil, readSignRequest)
-			if err != nil {
-				return err
-			}
-			signer, ok := keys[string(req.pubKey)]
-			if !ok {
-				rsp.WriteByte(SSH_AGENT_FAILURE)
-				break
-			}
-			sig, err := signer(req.data)
-			if err != nil {
-				log.Printf("signing failed: %v", err)
-				rsp.WriteByte(SSH_AGENT_FAILURE)
-				break
-			}
-			rsp.WriteByte(SSH_AGENT_SIGN_RESPONSE)
-			writeString(&rsp, sig)
-		default:
+		signer, ok := keys[string(req.pubKey)]
+		if !ok {
 			rsp.WriteByte(SSH_AGENT_FAILURE)
+			break
 		}
-		if err := writeString(w, rsp.Bytes()); err != nil {
+		// TODO: implement a signer that can sign several things in parallel
+		sig, err := signer(req.data)
+		if err != nil {
+			log.Printf("signing failed: %v", err)
+			rsp.WriteByte(SSH_AGENT_FAILURE)
+			break
+		}
+		rsp.WriteByte(SSH_AGENT_SIGN_RESPONSE)
+		writeString(&rsp, sig)
+	default:
+		rsp.WriteByte(SSH_AGENT_FAILURE)
+	}
+	responseCh <- response{rsp.Bytes(), sequenceNumber}
+	return nil
+}
+
+// Reads incoming requests and calls HandleRequest() for each request
+func ReadRequests(r io.Reader, keys map[string]SSHSign, exitCh chan error, responseCh chan response) error {
+	sequenceNumber := 0
+	for {
+		data, err := readString(r, maxSize)
+		if err != nil {
+			exitCh <- err
+			return err
+		}
+		if len(data) == 0 {
+			err := fmt.Errorf("invalid empty agent message")
+			exitCh <- err
+			return err
+		}
+		sequenceNumber = sequenceNumber + 1
+		//if sequenceNumber == 7 {
+		//   err := fmt.Errorf("ERROR sequenceNumber == 7")
+		//   exitCh <- err
+		//   return err
+		//}
+		go HandleRequest(keys, data, sequenceNumber, responseCh)
+	}
+}
+
+// Writes responses in the correct order, based on sequence numbers
+func WriteResponses(w io.Writer, exitCh chan error, responseCh chan response) error {
+	for {
+		response := <-responseCh
+		// TODO: check sequenceNumber and write responses in the right order
+		rspData := response.data
+		if err := writeString(w, rspData); err != nil {
 			return err
 		}
 	}
