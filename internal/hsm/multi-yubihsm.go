@@ -7,7 +7,7 @@ import (
 )
 
 type MultiYubiHSMSigner struct {
-   signers []*YubiHSMSigner
+	signers []*YubiHSMSigner
 }
 
 func NewMultiYubiHSMSigner(signers []*YubiHSMSigner) (*MultiYubiHSMSigner, error) {
@@ -15,9 +15,9 @@ func NewMultiYubiHSMSigner(signers []*YubiHSMSigner) (*MultiYubiHSMSigner, error
 }
 
 func (multiHSMSigner *MultiYubiHSMSigner) Sign(r io.Reader, msg []byte, o crypto.SignerOpts) ([]byte, error) {
-     nSigners := len(multiHSMSigner.signers)
-     index := rand.Intn(nSigners)
-     return multiHSMSigner.signers[index].Sign(r, msg, o)
+	nSigners := len(multiHSMSigner.signers)
+	index := rand.Intn(nSigners)
+	return multiHSMSigner.signers[index].Sign(r, msg, o)
 }
 
 func (multiHSMSigner *MultiYubiHSMSigner) Public() crypto.PublicKey {

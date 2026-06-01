@@ -27,8 +27,8 @@ type signRequest struct {
 }
 
 type signRequestWithSeqNo struct {
-     requestData     []byte
-     sequenceNumber  int
+	requestData    []byte
+	sequenceNumber int
 }
 
 type response struct {
