@@ -164,6 +164,7 @@ stdout, they are written as one line each, pid first.
 		defer os.Remove(socketName)
 	}
 	var signer crypto.Signer
+	nWorkers := 1
 	if len(keyFile) > 0 {
 		var err error
 		signer, err = agent.ReadPrivateKeyFile(keyFile)
@@ -174,7 +175,7 @@ stdout, they are written as one line each, pid first.
 		if keyId >= 0x10000 {
 			return 0, fmt.Errorf("Key id %d out of range.", keyId)
 		}
-		signer, err = getHsmSigner(authFile, keyId, retry)
+		signer, nWorkers, err = getHsmSigner(authFile, keyId, retry)
 		if err != nil {
 			return 0, fmt.Errorf("Error in getHsmSigner: %v", err)
 		}
@@ -187,7 +188,7 @@ stdout, they are written as one line each, pid first.
 	keys := map[string]agent.SSHSign{sshKey: sshSign}
 
 	if len(set.Args()) > 0 {
-		go runAgent(socket, keys)
+		go runAgent(socket, keys, nWorkers)
 
 		cmd := createCommand(socketName, pidFile != "-", set.Args())
 		if err := cmd.Start(); err != nil {
@@ -240,14 +241,14 @@ stdout, they are written as one line each, pid first.
 		<-ch
 		socket.Close()
 	}()
-	runAgent(socket, keys)
+	runAgent(socket, keys, nWorkers)
 	return 0, nil
 }
 
-func getHsmSigner(authFile string, keyId int, retry bool) (crypto.Signer, error) {
+func getHsmSigner(authFile string, keyId int, retry bool) (crypto.Signer, int, error) {
 	f, err := os.Open(authFile)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
@@ -260,26 +261,26 @@ func getHsmSigner(authFile string, keyId int, retry bool) (crypto.Signer, error)
 		colon1 := strings.Index(line, ":")
 		colon2 := strings.Index(line[colon1+1:], ":")
 		if colon1 < 0 || colon2 < 0 {
-			return nil, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", n, authFile)
+			return nil, 0, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", n, authFile)
 		}
 		port := line[0:colon1]
 		authId, err := strconv.ParseUint(line[colon1+1:colon1+1+colon2], 10, 16)
 		if err != nil {
-			return nil, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
+			return nil, 0, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
 		}
 		authPassword := line[colon1+colon2+2:]
 		connector := "localhost:" + port
 		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
 		if err != nil {
-			return nil, fmt.Errorf("Error in openHSM when processing line %v in file %q: %v", n, authFile, err)
+			return nil, 0, fmt.Errorf("Error in openHSM when processing line %v in file %q: %v", n, authFile, err)
 		}
 		hsmSigners = append(hsmSigners, hsmSigner)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	multiHsmSigner, err := hsm.NewMultiYubiHSMSigner(hsmSigners)
-	return multiHsmSigner, err
+	return multiHsmSigner, n, err
 }
 
 // If the file isn't a listening socket, returns nil listener, no error.
@@ -321,14 +322,14 @@ func openHSM(connector string, authId uint16, authPassword string, keyId uint16,
 	return nil, fmt.Errorf("Connecting to HSM failed: %v", err)
 }
 
-func serveAndClose(c net.Conn, keys map[string]agent.SSHSign) {
+func serveAndClose(c net.Conn, keys map[string]agent.SSHSign, nWorkers int) {
 	defer c.Close()
-	agent.ServeAgent(c, c, keys)
+	agent.ServeAgent(c, c, keys, nWorkers)
 }
 
 // Accepts connections, and spawns a serving goroutine for each. Will
 // return when the listening socket is closed under its feet.
-func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
+func runAgent(socket net.Listener, keys map[string]agent.SSHSign, nWorkers int) {
 	for {
 		c, err := socket.Accept()
 		if err != nil {
@@ -337,7 +338,7 @@ func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
 			// good way to check for that.
 			return
 		}
-		go serveAndClose(c, keys)
+		go serveAndClose(c, keys, nWorkers)
 	}
 }
 

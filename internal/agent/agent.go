@@ -51,16 +51,16 @@ func readSignRequest(r io.Reader) (req signRequest, err error) {
 }
 
 // The map keys are SSH public key blobs (without outer length field).
-func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
+func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign, nWorkers int) error {
 	// The exitCh channel is used in case of error
 	exitCh := make(chan error, 1)
 	requestCh := make(chan signRequestWithSeqNo, 100)
 	responseCh := make(chan response, 100)
 	go ReadRequests(r, keys, exitCh, requestCh, responseCh)
 	go WriteResponses(w, exitCh, responseCh)
-	// TODO: make number of workers configurable. (Using two for the moment.)
-	go HandleRequests(requestCh, responseCh, keys)
-	go HandleRequests(requestCh, responseCh, keys)
+	for i := 0; i < nWorkers; i++ {
+		go HandleRequests(requestCh, responseCh, keys)
+	}
 	err := <-exitCh
 	log.Printf("ServeAgent error: %v", err)
 	return err
