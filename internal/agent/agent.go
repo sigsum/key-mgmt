@@ -102,7 +102,6 @@ func HandleRequest(keys map[string]SSHSign, data []byte, sequenceNumber int, res
 			rsp.WriteByte(SSH_AGENT_FAILURE)
 			break
 		}
-		// TODO: implement a signer that can sign several things in parallel
 		sig, err := signer(req.data)
 		if err != nil {
 			log.Printf("signing failed: %v", err)

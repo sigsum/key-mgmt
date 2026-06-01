@@ -12,7 +12,7 @@ import (
 	"github.com/certusone/yubihsm-go/connector"
 )
 
-type ParallelYubiHSMSigner struct {
+type MultiYubiHSMSigner struct {
    signers []*YubiHSMSigner
 }
 
@@ -35,8 +35,8 @@ func NewYubiHSMSigner(conn string /* host:port */, authId uint16, authPassword s
 	return &YubiHSMSigner{session: sess, keyId: keyId, publicKey: pub}, nil
 }
 
-func NewParallelYubiHSMSigner(signers []*YubiHSMSigner) (*ParallelYubiHSMSigner, error) {
-	return &ParallelYubiHSMSigner{signers}, nil
+func NewMultiYubiHSMSigner(signers []*YubiHSMSigner) (*MultiYubiHSMSigner, error) {
+	return &MultiYubiHSMSigner{signers}, nil
 }
 
 func (hsm *YubiHSMSigner) Sign(_ io.Reader, msg []byte, _ crypto.SignerOpts) ([]byte, error) {
@@ -53,18 +53,18 @@ func (hsm *YubiHSMSigner) Sign(_ io.Reader, msg []byte, _ crypto.SignerOpts) ([]
 	return signature, nil
 }
 
-func (parallelSigner *ParallelYubiHSMSigner) Sign(r io.Reader, msg []byte, o crypto.SignerOpts) ([]byte, error) {
-     nSigners := len(parallelSigner.signers)
+func (multiHSMSigner *MultiYubiHSMSigner) Sign(r io.Reader, msg []byte, o crypto.SignerOpts) ([]byte, error) {
+     nSigners := len(multiHSMSigner.signers)
      index := rand.Intn(nSigners)
-     return parallelSigner.signers[index].Sign(r, msg, o)
+     return multiHSMSigner.signers[index].Sign(r, msg, o)
 }
 
 func (hsm *YubiHSMSigner) Public() crypto.PublicKey {
 	return hsm.publicKey
 }
 
-func (parallelSigner *ParallelYubiHSMSigner) Public() crypto.PublicKey {
-	return parallelSigner.signers[0].publicKey
+func (multiHSMSigner *MultiYubiHSMSigner) Public() crypto.PublicKey {
+	return multiHSMSigner.signers[0].publicKey
 }
 
 // Close closes the connection to the HSM

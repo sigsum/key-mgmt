@@ -281,8 +281,8 @@ func getHsmSigner(authFile string, keyId int, retry bool) (crypto.Signer, error)
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	parallelHsmSigner, err := hsm.NewParallelYubiHSMSigner(hsmSigners)
-	return parallelHsmSigner, err
+	multiHsmSigner, err := hsm.NewMultiYubiHSMSigner(hsmSigners)
+	return multiHsmSigner, err
 }
 
 // If the file isn't a listening socket, returns nil listener, no error.
