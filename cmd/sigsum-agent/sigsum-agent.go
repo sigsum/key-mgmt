@@ -263,9 +263,6 @@ func getHsmSigner(authFile string, keyId int, retry bool) (crypto.Signer, error)
 			return nil, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", n, authFile)
 		}
 		port := line[0:colon1]
-		if err != nil {
-			return nil, fmt.Errorf("Invalid portnumber in file %q: %v", authFile, err)
-		}
 		authId, err := strconv.ParseUint(line[colon1+1:colon1+1+colon2], 10, 16)
 		if err != nil {
 			return nil, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
