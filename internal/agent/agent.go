@@ -26,6 +26,11 @@ type signRequest struct {
 	data   []byte
 }
 
+type signRequestWithSeqNo struct {
+     requestData     []byte
+     sequenceNumber  int
+}
+
 type response struct {
 	data           []byte
 	sequenceNumber int
@@ -49,12 +54,23 @@ func readSignRequest(r io.Reader) (req signRequest, err error) {
 func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign) error {
 	// The exitCh channel is used in case of error
 	exitCh := make(chan error, 1)
+	requestCh := make(chan signRequestWithSeqNo, 100)
 	responseCh := make(chan response, 100)
-	go ReadRequests(r, keys, exitCh, responseCh)
+	go ReadRequests(r, keys, exitCh, requestCh, responseCh)
 	go WriteResponses(w, exitCh, responseCh)
+	// TODO: make number of workers configurable. (Using two for the moment.)
+	go HandleRequests(requestCh, responseCh, keys)
+	go HandleRequests(requestCh, responseCh, keys)
 	err := <-exitCh
 	log.Printf("ServeAgent error: %v", err)
 	return err
+}
+
+func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan response, keys map[string]SSHSign) error {
+	for {
+		newRequest := <-requestCh
+		HandleRequest(keys, newRequest.requestData, newRequest.sequenceNumber, responseCh)
+	}
 }
 
 // Handles a single request
@@ -103,7 +119,7 @@ func HandleRequest(keys map[string]SSHSign, data []byte, sequenceNumber int, res
 }
 
 // Reads incoming requests and calls HandleRequest() for each request
-func ReadRequests(r io.Reader, keys map[string]SSHSign, exitCh chan error, responseCh chan response) error {
+func ReadRequests(r io.Reader, keys map[string]SSHSign, exitCh chan error, requestCh chan signRequestWithSeqNo, responseCh chan response) error {
 	sequenceNumber := 0
 	for {
 		data, err := readString(r, maxSize)
@@ -122,7 +138,7 @@ func ReadRequests(r io.Reader, keys map[string]SSHSign, exitCh chan error, respo
 		//   exitCh <- err
 		//   return err
 		//}
-		go HandleRequest(keys, data, sequenceNumber, responseCh)
+		requestCh <- signRequestWithSeqNo{data, sequenceNumber}
 	}
 }
 
