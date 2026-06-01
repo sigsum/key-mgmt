@@ -5,11 +5,16 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"io"
+	"math/rand"
 
 	"github.com/certusone/yubihsm-go"
 	"github.com/certusone/yubihsm-go/commands"
 	"github.com/certusone/yubihsm-go/connector"
 )
+
+type ParallelYubiHSMSigner struct {
+   signers []*YubiHSMSigner
+}
 
 type YubiHSMSigner struct {
 	session   *yubihsm.SessionManager
@@ -30,6 +35,10 @@ func NewYubiHSMSigner(conn string /* host:port */, authId uint16, authPassword s
 	return &YubiHSMSigner{session: sess, keyId: keyId, publicKey: pub}, nil
 }
 
+func NewParallelYubiHSMSigner(signers []*YubiHSMSigner) (*ParallelYubiHSMSigner, error) {
+	return &ParallelYubiHSMSigner{signers}, nil
+}
+
 func (hsm *YubiHSMSigner) Sign(_ io.Reader, msg []byte, _ crypto.SignerOpts) ([]byte, error) {
 	signature, err := sign(hsm.session, hsm.keyId, msg)
 	if err != nil {
@@ -44,8 +53,18 @@ func (hsm *YubiHSMSigner) Sign(_ io.Reader, msg []byte, _ crypto.SignerOpts) ([]
 	return signature, nil
 }
 
+func (parallelSigner *ParallelYubiHSMSigner) Sign(r io.Reader, msg []byte, o crypto.SignerOpts) ([]byte, error) {
+     nSigners := len(parallelSigner.signers)
+     index := rand.Intn(nSigners)
+     return parallelSigner.signers[index].Sign(r, msg, o)
+}
+
 func (hsm *YubiHSMSigner) Public() crypto.PublicKey {
 	return hsm.publicKey
+}
+
+func (parallelSigner *ParallelYubiHSMSigner) Public() crypto.PublicKey {
+	return parallelSigner.signers[0].publicKey
 }
 
 // Close closes the connection to the HSM
