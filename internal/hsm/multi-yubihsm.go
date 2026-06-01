@@ -2,6 +2,7 @@ package hsm
 
 import (
 	"crypto"
+	"fmt"
 	"io"
 	"math/rand"
 )
@@ -11,6 +12,14 @@ type MultiYubiHSMSigner struct {
 }
 
 func NewMultiYubiHSMSigner(signers []*YubiHSMSigner) (*MultiYubiHSMSigner, error) {
+	// Verify that all signers have the same pubkey
+	pub0 := signers[0].PublicEd25519()
+	for i, s := range signers {
+		pub := s.PublicEd25519()
+		if !pub.Equal(pub0) {
+			return nil, fmt.Errorf("Error in NewMultiYubiHSMSigner: different pubkeys found for HSMs %v and %v", 0, i)
+		}
+	}
 	return &MultiYubiHSMSigner{signers}, nil
 }
 

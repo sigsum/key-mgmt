@@ -48,6 +48,10 @@ func (hsm *YubiHSMSigner) Public() crypto.PublicKey {
 	return hsm.publicKey
 }
 
+func (hsm *YubiHSMSigner) PublicEd25519() ed25519.PublicKey {
+	return hsm.publicKey
+}
+
 // Close closes the connection to the HSM
 func (hsm *YubiHSMSigner) Close() {
 	hsm.session.Destroy()
