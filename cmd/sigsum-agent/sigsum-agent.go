@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"crypto"
 	"crypto/rand"
 	"errors"
@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -44,10 +45,9 @@ To use a yubihsm key, you need to specify both an authorization file
 file is a single line with the the authorization id (decimal number),
 and the corresponding passphrase, separated by a single ':' character.
 
-When using a yubihsm key, the agent needs a separate yubihsm-connector
-process to be running. By default, the connector is expected to
-listen on TCP port 12345 on localhost, but this can be changed with
-the -c option.
+When using yubihsm key(s), the agent needs a separate
+yubihsm-connector process to be running for each yubihsm key. TODO:
+document how that is configured.
 
 The agent listens for connections on a unix socket. By default, a
 random name is selected under /tmp (or ${TMPDIR}, if set), but it can
@@ -86,8 +86,6 @@ is closed after the pid file is written, and the command's stdout is
 redirected to /dev/null. If both pid and socket name are written to
 stdout, they are written as one line each, pid first.
 `
-	// Default connector url
-	connector := "localhost:12345"
 	keyId := -1
 	authFile := ""
 	keyFile := ""
@@ -99,7 +97,6 @@ stdout, they are written as one line each, pid first.
 	set := getopt.New()
 	set.SetParameters("[cmd ...]")
 	set.SetUsage(func() { fmt.Print(usage) })
-	set.FlagLong(&connector, "connector", 'c', "host:port")
 	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
 	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
 	set.FlagLong(&keyFile, "key-file", 'k', "private key file")
@@ -177,26 +174,10 @@ stdout, they are written as one line each, pid first.
 		if keyId >= 0x10000 {
 			return 0, fmt.Errorf("Key id %d out of range.", keyId)
 		}
-		buf, err := os.ReadFile(authFile)
+		signer, err = getHsmSigner(authFile, keyId, retry)
 		if err != nil {
-			return 0, fmt.Errorf("Reading auth file %q failed: %v", authFile, err)
+			return 0, fmt.Errorf("Error in getHsmSigner: %v", err)
 		}
-		buf = bytes.TrimSpace(buf)
-		colon := bytes.Index(buf, []byte{':'})
-		if colon < 0 {
-			return 0, fmt.Errorf("Invalid auth file %q, missing ':'", authFile)
-		}
-		authId, err := strconv.ParseUint(string(buf[:colon]), 10, 16)
-		if err != nil {
-			return 0, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
-		}
-		authPassword := string(buf[colon+1:])
-		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
-		if err != nil {
-			return 0, fmt.Errorf("Connecting to hsm failed: %v", err)
-		}
-		defer hsmSigner.Close()
-		signer = hsmSigner
 	}
 
 	sshKey, sshSign, err := agent.SSHFromEd25519(signer)
@@ -261,6 +242,47 @@ stdout, they are written as one line each, pid first.
 	}()
 	runAgent(socket, keys)
 	return 0, nil
+}
+
+func getHsmSigner(authFile string, keyId int, retry bool) (crypto.Signer, error) {
+	f, err := os.Open(authFile)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	var n int
+	var hsmSigners []*hsm.YubiHSMSigner
+	for scanner.Scan() {
+		n++
+		line := scanner.Text()
+		// On each line expect three things separated by colons: port number, key id, passphrase
+		colon1 := strings.Index(line, ":")
+		colon2 := strings.Index(line[colon1+1:], ":")
+		if colon1 < 0 || colon2 < 0 {
+			return nil, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", n, authFile)
+		}
+		port := line[0:colon1]
+		if err != nil {
+			return nil, fmt.Errorf("Invalid portnumber in file %q: %v", authFile, err)
+		}
+		authId, err := strconv.ParseUint(line[colon1+1:colon1+1+colon2], 10, 16)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
+		}
+		authPassword := line[colon1+colon2+2:]
+		connector := "localhost:" + port
+		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
+		if err != nil {
+			return nil, fmt.Errorf("Error in openHSM when processing line %v in file %q: %v", n, authFile, err)
+		}
+		hsmSigners = append(hsmSigners, hsmSigner)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	parallelHsmSigner, err := hsm.NewParallelYubiHSMSigner(hsmSigners)
+	return parallelHsmSigner, err
 }
 
 // If the file isn't a listening socket, returns nil listener, no error.
