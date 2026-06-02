@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
 )
 
 const (
@@ -52,24 +53,40 @@ func readSignRequest(r io.Reader) (req signRequest, err error) {
 
 // The map keys are SSH public key blobs (without outer length field).
 func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign, nWorkers int) error {
-	// The exitCh channel is used in case of error
+	// The exitCh channel is used in case of error in ReadRequests()
 	exitCh := make(chan error, 1)
 	requestCh := make(chan signRequestWithSeqNo, 100)
 	responseCh := make(chan response, 100)
 	go ReadRequests(r, keys, exitCh, requestCh, responseCh)
-	go WriteResponses(w, exitCh, responseCh)
+	go WriteResponses(w, responseCh)
+	var wg sync.WaitGroup
 	for i := 0; i < nWorkers; i++ {
-		go HandleRequests(requestCh, responseCh, keys)
+		wg.Add(1)
+		go HandleRequests(requestCh, responseCh, keys, &wg)
 	}
 	err := <-exitCh
 	log.Printf("ServeAgent error: %v", err)
+	// We close requestCh which should cause all HandleRequests goroutines to finish
+	close(requestCh)
+	// Wait for all HandleRequests goroutines to finish
+	wg.Wait()
+	// Now we can close the responseCh channel, we know nothing more will be written to it
+	close(responseCh)
 	return err
 }
 
-func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan response, keys map[string]SSHSign) error {
+func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan response, keys map[string]SSHSign, wg *sync.WaitGroup) error {
 	for {
-		newRequest := <-requestCh
-		HandleRequest(keys, newRequest.requestData, newRequest.sequenceNumber, responseCh)
+		newRequest, more := <-requestCh
+		if more {
+			err := HandleRequest(keys, newRequest.requestData, newRequest.sequenceNumber, responseCh)
+			if err != nil {
+				log.Printf("HandleRequest failed: %v", err)
+			}
+		} else {
+			wg.Done()
+			return nil
+		}
 	}
 }
 
@@ -142,11 +159,14 @@ func ReadRequests(r io.Reader, keys map[string]SSHSign, exitCh chan error, reque
 }
 
 // Writes responses in the correct order, based on sequence numbers
-func WriteResponses(w io.Writer, exitCh chan error, responseCh chan response) error {
+func WriteResponses(w io.Writer, responseCh chan response) error {
 	nextSequenceNumberToWrite := 1
 	pendingResponses := map[int]response{}
 	for {
-		newResponse := <-responseCh
+		newResponse, more := <-responseCh
+		if !more {
+			return nil
+		}
 		pendingResponses[newResponse.sequenceNumber] = newResponse
 		// Write as many responses as we can
 		for {
@@ -156,7 +176,7 @@ func WriteResponses(w io.Writer, exitCh chan error, responseCh chan response) er
 				break
 			}
 			if err := writeString(w, rsp.data); err != nil {
-				return err
+				log.Printf("Error in WriteResponses: writeString failed: %v", err)
 			}
 			delete(pendingResponses, nextSequenceNumberToWrite)
 			nextSequenceNumberToWrite = nextSequenceNumberToWrite + 1
