@@ -75,7 +75,7 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign, nWorkers int)
 	return err
 }
 
-func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan response, keys map[string]SSHSign, wg *sync.WaitGroup) error {
+func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan response, keys map[string]SSHSign, wg *sync.WaitGroup) {
 	for {
 		newRequest, more := <-requestCh
 		if more {
@@ -85,7 +85,7 @@ func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan respons
 			}
 		} else {
 			wg.Done()
-			return nil
+			return
 		}
 	}
 }
@@ -135,37 +135,32 @@ func HandleRequest(keys map[string]SSHSign, data []byte, sequenceNumber int, res
 }
 
 // Reads incoming requests and calls HandleRequest() for each request
-func ReadRequests(r io.Reader, keys map[string]SSHSign, exitCh chan error, requestCh chan signRequestWithSeqNo, responseCh chan response) error {
+func ReadRequests(r io.Reader, keys map[string]SSHSign, exitCh chan error, requestCh chan signRequestWithSeqNo, responseCh chan response) {
 	sequenceNumber := 0
 	for {
 		data, err := readString(r, maxSize)
 		if err != nil {
 			exitCh <- err
-			return err
+			return
 		}
 		if len(data) == 0 {
 			err := fmt.Errorf("invalid empty agent message")
 			exitCh <- err
-			return err
+			return
 		}
 		sequenceNumber = sequenceNumber + 1
-		//if sequenceNumber == 7 {
-		//   err := fmt.Errorf("ERROR sequenceNumber == 7")
-		//   exitCh <- err
-		//   return err
-		//}
 		requestCh <- signRequestWithSeqNo{data, sequenceNumber}
 	}
 }
 
 // Writes responses in the correct order, based on sequence numbers
-func WriteResponses(w io.Writer, responseCh chan response) error {
+func WriteResponses(w io.Writer, responseCh chan response) {
 	nextSequenceNumberToWrite := 1
 	pendingResponses := map[int]response{}
 	for {
 		newResponse, more := <-responseCh
 		if !more {
-			return nil
+			return
 		}
 		pendingResponses[newResponse.sequenceNumber] = newResponse
 		// Write as many responses as we can
