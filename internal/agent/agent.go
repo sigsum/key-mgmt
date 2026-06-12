@@ -55,8 +55,8 @@ func readSignRequest(r io.Reader) (req signRequest, err error) {
 func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign, nWorkers int) error {
 	// The exitCh channel is used in case of error in ReadRequests()
 	exitCh := make(chan error, 1)
-	requestCh := make(chan signRequestWithSeqNo, 100)
-	responseCh := make(chan response, 100)
+	requestCh := make(chan signRequestWithSeqNo)
+	responseCh := make(chan response)
 	go ReadRequests(r, keys, exitCh, requestCh, responseCh)
 	go WriteResponses(w, responseCh)
 	var wg sync.WaitGroup
