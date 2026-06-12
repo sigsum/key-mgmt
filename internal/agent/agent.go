@@ -62,7 +62,10 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign, nWorkers int)
 	var wg sync.WaitGroup
 	for i := 0; i < nWorkers; i++ {
 		wg.Add(1)
-		go HandleRequests(requestCh, responseCh, keys, &wg)
+		go func() {
+			defer wg.Done()
+			HandleRequests(requestCh, responseCh, keys)
+		}()
 	}
 	err := <-exitCh
 	log.Printf("ServeAgent error: %v", err)
@@ -75,7 +78,7 @@ func ServeAgent(r io.Reader, w io.Writer, keys map[string]SSHSign, nWorkers int)
 	return err
 }
 
-func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan response, keys map[string]SSHSign, wg *sync.WaitGroup) {
+func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan response, keys map[string]SSHSign) {
 	for {
 		newRequest, more := <-requestCh
 		if more {
@@ -84,7 +87,6 @@ func HandleRequests(requestCh chan signRequestWithSeqNo, responseCh chan respons
 				log.Printf("HandleRequest failed: %v", err)
 			}
 		} else {
-			wg.Done()
 			return
 		}
 	}
