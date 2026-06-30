@@ -257,6 +257,10 @@ func getHsmSigner(authFile string, keyId int, retry bool) (crypto.Signer, int, e
 	for scanner.Scan() {
 		n++
 		line := scanner.Text()
+		// If a line is empty or a comment we move on
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
 		// On each line expect three things separated by colons: port number, key id, passphrase
 		colon1 := strings.Index(line, ":")
 		colon2 := strings.Index(line[colon1+1:], ":")
