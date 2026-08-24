@@ -1,5 +1,15 @@
 NEWS for key-mgmt v0.2.x
 
+    Features:
+
+    * Support -k option multiple times.
+
+    * Support ML-DSA-44 private keys (file with 32 bytes in hex
+      format).
+
+    * Add genkey-mldsa44 tool to generate ML-DSA-44 private keys in
+      the required format.
+
     Bug fixes:
 
     * sigsum-agent: Fix file descriptor leak.
