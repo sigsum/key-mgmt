@@ -7,7 +7,6 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,8 +19,6 @@ import (
 // This implementation supports only unencrypted ed25519 keys.
 
 const pemPrivateKeyTag = "OPENSSH PRIVATE KEY"
-
-var NoPEMError = errors.New("not a PEM file")
 
 var opensshPrivateKeyPrefix = bytes.Join([][]byte{
 	[]byte("openssh-key-v1"), []byte{0},
@@ -109,8 +106,10 @@ func readPrivateKey(r io.Reader) (crypto.Signer, error) {
 		})
 }
 
-// Reads an ASCII format private key. Supports only the case of a
-// single unencrypted key.
+// Reads an ASCII format private key of the supported types (Ed25519,
+// ML-DSA-44). Supports only the case of a single unencrypted key per
+// file. The format is OpenSSH PEM, or fallback on raw bytes in
+// hexadecimal (for ML-DSA-44).
 func ReadPrivateKeyFile(fileName string) (crypto.Signer, error) {
 	ascii, err := os.ReadFile(fileName)
 	if err != nil {
@@ -118,7 +117,7 @@ func ReadPrivateKeyFile(fileName string) (crypto.Signer, error) {
 	}
 	block, _ := pem.Decode(ascii)
 	if block == nil {
-		return nil, NoPEMError
+		return NewMLDSA44PrivateKeyFromHex(string(bytes.TrimSpace(ascii)))
 	}
 	if block.Type != pemPrivateKeyTag {
 		return nil, fmt.Errorf("unexpected PEM tag: %q", block.Type)

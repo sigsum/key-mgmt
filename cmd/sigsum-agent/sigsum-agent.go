@@ -2,7 +2,8 @@ package main
 
 import (
 	"bytes"
-	"crypto"
+	"crypto/ed25519"
+	"crypto/mldsa"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -34,11 +35,17 @@ func main() {
 
 func mainWithStatus() (int, error) {
 	const usage = `
-Start an ssh-agent that acts as an ed25519 signing oracle.
+Start an ssh-agent that acts as a signing oracle. Ed25519 and
+ML-DSA-44 private keys are supported.
 
-It can use either an unencrypted private key, in openssh format, or a
-private key managed by a yubihsm2 device. To use an unencrypted
-private key, pass the -k option with the name of the private key file.
+One or more of the following formats can be used: file with Ed25519
+private key in unencrypted OpenSSH PEM format, file with ML-DSA-44 raw
+private key in a hex format, Ed25519 private key managed by a yubihsm2
+device.
+
+To use a private key file, pass the -k option with the name of the
+private key file; the -k option can be used several times.
+
 To use a yubihsm key, you need to specify both an authorization file
 (-a option) and key id (-i option). The contents of the authorization
 file is a single line with the the authorization id (decimal number),
@@ -90,7 +97,7 @@ stdout, they are written as one line each, pid first.
 	connector := "localhost:12345"
 	keyId := -1
 	authFile := ""
-	keyFile := ""
+	keyFiles := []string{}
 	socketName := ""
 	pidFile := ""
 	retry := false
@@ -102,7 +109,7 @@ stdout, they are written as one line each, pid first.
 	set.FlagLong(&connector, "connector", 'c', "host:port")
 	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
 	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
-	set.FlagLong(&keyFile, "key-file", 'k', "private key file")
+	set.FlagLong(&keyFiles, "key-file", 'k', "Private key file, either Ed25519 (in OpenSSH PEM Format), or ML-DSA-44 (raw bytes in hex format). Can be used several times.")
 	set.FlagLong(&socketName, "socket-name", 's', "name of unix socket")
 	set.FlagLong(&pidFile, "pid-file", 0, "for writing pid of agent or command, '-' means stdout")
 	set.FlagLong(&retry, "retry", 0, "retry a few times if connecting to the HSM fails at startup")
@@ -121,9 +128,10 @@ stdout, they are written as one line each, pid first.
 		return 0, nil
 	}
 
-	if (keyId < 0 && len(keyFile) == 0) || (keyId >= 0 && len(keyFile) > 0) {
-		return 0, fmt.Errorf("Exactly one of the --key-id and --key-file options must be provided.")
+	if keyId < 0 && len(keyFiles) == 0 {
+		return 0, fmt.Errorf("must provide at least one of the --key-id and --key-file options")
 	}
+
 	if keyId >= 0 && len(authFile) == 0 {
 		return 0, fmt.Errorf("The --auth-file option is required with --key-id.")
 	}
@@ -166,44 +174,24 @@ stdout, they are written as one line each, pid first.
 		defer socket.Close()
 		defer os.Remove(socketName)
 	}
-	var signer crypto.Signer
-	if len(keyFile) > 0 {
-		var err error
-		signer, err = agent.ReadPrivateKeyFile(keyFile)
-		if err != nil {
-			return 0, fmt.Errorf("Reading private key file %q failed: %v", keyFile, err)
-		}
-	} else {
-		if keyId >= 0x10000 {
-			return 0, fmt.Errorf("Key id %d out of range.", keyId)
-		}
-		buf, err := os.ReadFile(authFile)
-		if err != nil {
-			return 0, fmt.Errorf("Reading auth file %q failed: %v", authFile, err)
-		}
-		buf = bytes.TrimSpace(buf)
-		colon := bytes.Index(buf, []byte{':'})
-		if colon < 0 {
-			return 0, fmt.Errorf("Invalid auth file %q, missing ':'", authFile)
-		}
-		authId, err := strconv.ParseUint(string(buf[:colon]), 10, 16)
-		if err != nil {
-			return 0, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
-		}
-		authPassword := string(buf[colon+1:])
-		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
-		if err != nil {
-			return 0, fmt.Errorf("Connecting to hsm failed: %v", err)
-		}
-		defer hsmSigner.Close()
-		signer = hsmSigner
-	}
 
-	sshKey, sshSign, err := agent.SSHFromEd25519(signer)
-	if err != nil {
-		return 0, fmt.Errorf("Internal error: %v", err)
+	keys := make(map[string]agent.SSHSign)
+	if len(keyFiles) > 0 {
+		for _, keyFile := range keyFiles {
+			sshKey, sshSign, err := sshFromFile(keyFile)
+			if err != nil {
+				return 0, err
+			}
+			keys[sshKey] = sshSign
+		}
 	}
-	keys := map[string]agent.SSHSign{sshKey: sshSign}
+	if keyId > 0 {
+		sshKey, sshSign, err := sshFromEd25519HSM(keyId, connector, authFile, retry)
+		if err != nil {
+			return 0, err
+		}
+		keys[sshKey] = sshSign
+	}
 
 	if len(set.Args()) > 0 {
 		go runAgent(socket, keys)
@@ -277,6 +265,51 @@ func openSocket(socketName string) (net.Listener, error) {
 	defer syscall.Umask(oldMask)
 
 	return net.Listen("unix", socketName)
+}
+
+func sshFromFile(keyFile string) (string, agent.SSHSign, error) {
+	signer, err := agent.ReadPrivateKeyFile(keyFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("read private key in PEM/hex format from file %q failed: %w", keyFile, err)
+	}
+	switch t := signer.(type) {
+	case ed25519.PrivateKey:
+		return agent.SSHFromEd25519(signer)
+	case *mldsa.PrivateKey:
+		return agent.SSHFromMLDSA44(signer)
+	default:
+		return "", nil, fmt.Errorf("unsupported signer type from file %q: %T", keyFile, t)
+	}
+}
+
+func sshFromEd25519HSM(keyId int, authFile string, connector string, retry bool) (string, agent.SSHSign, error) {
+	if keyId < 0 || keyId >= 0x10000 {
+		return "", nil, fmt.Errorf("Key id %d out of range.", keyId)
+	}
+	buf, err := os.ReadFile(authFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("Reading auth file %q failed: %v", authFile, err)
+	}
+	buf = bytes.TrimSpace(buf)
+	colon := bytes.Index(buf, []byte{':'})
+	if colon < 0 {
+		return "", nil, fmt.Errorf("Invalid auth file %q, missing ':'", authFile)
+	}
+	authId, err := strconv.ParseUint(string(buf[:colon]), 10, 16)
+	if err != nil {
+		return "", nil, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
+	}
+	authPassword := string(buf[colon+1:])
+	hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
+	if err != nil {
+		return "", nil, fmt.Errorf("Connecting to hsm failed: %v", err)
+	}
+	defer hsmSigner.Close()
+	sshKey, sshSign, err := agent.SSHFromEd25519(hsmSigner)
+	if err != nil {
+		return "", nil, fmt.Errorf("Internal error: %v", err)
+	}
+	return sshKey, sshSign, nil
 }
 
 // We need the connector to be up and running, to initialize and
