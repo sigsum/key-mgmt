@@ -8,7 +8,7 @@ import (
 	"math"
 )
 
-// SSH protocol utilities, copied from sigsum-go/internal/ssh.go
+// SSH protocol utilities, based on sigsum-go/internal/ssh.go
 
 type bytesOrString interface{ []byte | string }
 
@@ -78,19 +78,25 @@ func readSkip(r io.Reader, prefix []byte) error {
 }
 
 // Apply a reader function to a byte slice. Requires that the reader
-// consumes all bytes, except for optional padding bytes.
-func parseBytes[T any](blob []byte, padding []byte, reader func(io.Reader) (T, error)) (T, error) {
+// consumes all bytes, except for optional OpenSSH-style padding to
+// blockSize.
+func parseBytes[T any](blob []byte, blockSize int, reader func(io.Reader) (T, error)) (T, error) {
 	buf := bytes.NewBuffer(blob)
 	res, err := reader(buf)
 	if err != nil {
 		return res, err
 	}
-	leftOver := buf.Bytes()
-	if len(leftOver) > len(padding) {
-		return res, fmt.Errorf("trailing %d bytes of garbage", len(leftOver))
+	if leftOver := buf.Bytes(); len(leftOver) > 0 {
+		if blockSize < 2 {
+			return res, fmt.Errorf("trailing %d bytes of garbage", len(leftOver))
+		}
+		padding := genPadding(len(blob)-len(leftOver), blockSize)
+		if len(leftOver) != len(padding) {
+			return res, fmt.Errorf("trailing %d bytes, expected %d bytes padding", len(leftOver), len(padding))
+		}
+		if !bytes.Equal(leftOver, padding) {
+			return res, fmt.Errorf("unexpected padding bytes: %x", leftOver)
+		}
 	}
-	if !bytes.Equal(leftOver, padding[:len(leftOver)]) {
-		return res, fmt.Errorf("unexpected padding bytes: %x", leftOver)
-	}
-	return res, err
+	return res, nil
 }

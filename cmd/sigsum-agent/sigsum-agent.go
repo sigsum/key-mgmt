@@ -35,16 +35,17 @@ func main() {
 
 func mainWithStatus() (int, error) {
 	const usage = `
-Start an ssh-agent that acts as a signing oracle. Ed25519 and
-ML-DSA-44 private keys are supported.
+Start an ssh-agent that acts as a signing oracle.
 
-One or more of the following formats can be used: file with Ed25519
-private key in unencrypted OpenSSH PEM format, file with ML-DSA-44 raw
-private key in a hex format, Ed25519 private key managed by a yubihsm2
-device.
+The following types of keys can be used:
+
+- File with Ed25519 or ML-DSA-44 private key in OpenSSH PEM format.
+  Only plain, unencrypted private key.
+
+- Ed25519 private key managed by a yubihsm2 device.
 
 To use a private key file, pass the -k option with the name of the
-private key file; the -k option can be used several times.
+file. The -k option can be used several times for multiple keys.
 
 To use a yubihsm key, you need to specify both an authorization file
 (-a option) and key id (-i option). The contents of the authorization
@@ -109,7 +110,7 @@ stdout, they are written as one line each, pid first.
 	set.FlagLong(&connector, "connector", 'c', "host:port")
 	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
 	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
-	set.FlagLong(&keyFiles, "key-file", 'k', "Private key file, either Ed25519 (in OpenSSH PEM Format), or ML-DSA-44 (raw bytes in hex format). Can be used several times.")
+	set.FlagLong(&keyFiles, "key-file", 'k', "Ed25519 or ML-DSA-44 private key file in OpenSSH PEM Format. Can be used several times.")
 	set.FlagLong(&socketName, "socket-name", 's', "name of unix socket")
 	set.FlagLong(&pidFile, "pid-file", 0, "for writing pid of agent or command, '-' means stdout")
 	set.FlagLong(&retry, "retry", 0, "retry a few times if connecting to the HSM fails at startup")
@@ -267,7 +268,7 @@ func openSocket(socketName string) (net.Listener, error) {
 func sshFromFile(keyFile string) (string, agent.SSHSign, error) {
 	signer, err := agent.ReadPrivateKeyFile(keyFile)
 	if err != nil {
-		return "", nil, fmt.Errorf("read private key in PEM/hex format from file %q failed: %w", keyFile, err)
+		return "", nil, fmt.Errorf("read private key from file %q failed: %w", keyFile, err)
 	}
 	switch signer.(type) {
 	case ed25519.PrivateKey:

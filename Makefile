@@ -11,3 +11,4 @@ check:
 	./tests/pid-file-test
 	./tests/pid-stdout-test
 	./tests/inetd-test
+	./tests/signverify-mldsa-test
