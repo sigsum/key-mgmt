@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -166,44 +165,22 @@ stdout, they are written as one line each, pid first.
 		defer socket.Close()
 		defer os.Remove(socketName)
 	}
-	var signer crypto.Signer
+	keys := make(map[string]agent.SSHSign)
 	if len(keyFile) > 0 {
-		var err error
-		signer, err = agent.ReadPrivateKeyFile(keyFile)
+		sshKey, sshSign, err := sshFromFile(keyFile)
 		if err != nil {
-			return 0, fmt.Errorf("Reading private key file %q failed: %v", keyFile, err)
+			return 0, err
 		}
-	} else {
-		if keyId >= 0x10000 {
-			return 0, fmt.Errorf("Key id %d out of range.", keyId)
-		}
-		buf, err := os.ReadFile(authFile)
-		if err != nil {
-			return 0, fmt.Errorf("Reading auth file %q failed: %v", authFile, err)
-		}
-		buf = bytes.TrimSpace(buf)
-		colon := bytes.Index(buf, []byte{':'})
-		if colon < 0 {
-			return 0, fmt.Errorf("Invalid auth file %q, missing ':'", authFile)
-		}
-		authId, err := strconv.ParseUint(string(buf[:colon]), 10, 16)
-		if err != nil {
-			return 0, fmt.Errorf("Invalid auth id in file %q: %v", authFile, err)
-		}
-		authPassword := string(buf[colon+1:])
-		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
-		if err != nil {
-			return 0, fmt.Errorf("Connecting to hsm failed: %v", err)
-		}
-		defer hsmSigner.Close()
-		signer = hsmSigner
+		keys[sshKey] = sshSign
 	}
-
-	sshKey, sshSign, err := agent.SSHFromEd25519(signer)
-	if err != nil {
-		return 0, fmt.Errorf("Internal error: %v", err)
+	if keyId > 0 {
+		sshKey, sshSign, cleanup, err := sshFromEd25519HSM(keyId, authFile, connector, retry)
+		if err != nil {
+			return 0, err
+		}
+		defer cleanup()
+		keys[sshKey] = sshSign
 	}
-	keys := map[string]agent.SSHSign{sshKey: sshSign}
 
 	if len(set.Args()) > 0 {
 		go runAgent(socket, keys)
@@ -277,6 +254,47 @@ func openSocket(socketName string) (net.Listener, error) {
 	defer syscall.Umask(oldMask)
 
 	return net.Listen("unix", socketName)
+}
+
+func sshFromFile(keyFile string) (string, agent.SSHSign, error) {
+	signer, err := agent.ReadPrivateKeyFile(keyFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("read private key from file %q failed: %w", keyFile, err)
+	}
+	return agent.SSHFromEd25519(signer)
+}
+
+func sshFromEd25519HSM(keyId int, authFile string, connector string, retry bool) (string, agent.SSHSign, func(), error) {
+	if keyId < 0 || keyId >= 0x10000 {
+		return "", nil, nil, fmt.Errorf("key id %d out of range", keyId)
+	}
+	buf, err := os.ReadFile(authFile)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("reading auth file %q failed: %w", authFile, err)
+	}
+	buf = bytes.TrimSpace(buf)
+	colon := bytes.Index(buf, []byte{':'})
+	if colon < 0 {
+		return "", nil, nil, fmt.Errorf("invalid auth file %q, missing ':'", authFile)
+	}
+	authId, err := strconv.ParseUint(string(buf[:colon]), 10, 16)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("invalid auth id in file %q: %w", authFile, err)
+	}
+	authPassword := string(buf[colon+1:])
+	hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("connecting to hsm failed: %w", err)
+	}
+	cleanup := func() {
+		hsmSigner.Close()
+	}
+	sshKey, sshSign, err := agent.SSHFromEd25519(hsmSigner)
+	if err != nil {
+		cleanup()
+		return "", nil, nil, fmt.Errorf("internal error: %w", err)
+	}
+	return sshKey, sshSign, cleanup, nil
 }
 
 // We need the connector to be up and running, to initialize and
