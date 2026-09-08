@@ -1,0 +1,27 @@
+#! /bin/sh
+
+set -e
+
+cd "$(dirname "$0")"
+
+rm -f tmp.*
+
+cleanup() {
+    pid=$(cat tmp.pid 2>/dev/null) || return 0
+    kill -HUP "${pid}"
+}
+
+trap cleanup EXIT
+
+go run ../cmd/genkey-mldsa44 -o tmp.key >/dev/null
+fp=$(go run ../cmd/genkey-mldsa44 -l tmp.key)
+[ -n "$fp" ]
+
+go build -o tmp.agent ../cmd/sigsum-agent
+
+# The cat process blocks until the backgrounded process closes its
+# stdout, meaning that it has bound the socket and is ready to serve.
+(./tmp.agent -s ./tmp.socket -k tmp.key --pid-file tmp.pid & ) | cat
+
+export SSH_AUTH_SOCK=./tmp.socket
+go run ./signverify-mldsa "$fp" "the only winning move is not to play $$"
