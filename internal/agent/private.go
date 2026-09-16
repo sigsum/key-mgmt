@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/term"
 )
 
 // This implementation supports Ed25519 and ML-DSA-44 keys. Encryption
@@ -76,7 +78,7 @@ func genPadding(size int, blockSize int) []byte {
 	return padding
 }
 
-func writePrivateKeyFile(w io.Writer, algoName string, pub []byte, priv []byte, nonce [4]byte) error {
+func writePrivateKeyFile(w io.Writer, algoName string, pub []byte, priv []byte, nonce [4]byte, encrypter encryptFunc) error {
 	pubSize, privSize, err := getKeySizes(algoName)
 	if err != nil {
 		return err
@@ -102,34 +104,44 @@ func writePrivateKeyFile(w io.Writer, algoName string, pub []byte, priv []byte, 
 		// Empty comment.
 		serializeUint32(0),
 	}, nil)
-	privBlob := bytes.Join([][]byte{
-		privBlobUnpadded,
-		genPadding(len(privBlobUnpadded), 8),
-	}, nil)
+
+	privBlobEncrypted, cipherName, kdfName, kdfOpts, err := encrypter(privBlobUnpadded)
+	if err != nil {
+		return fmt.Errorf("failed encrypt: %w", err)
+	}
 
 	blob := bytes.Join([][]byte{
 		opensshPrivKeyAuthMagic,
-		serializeString("none"), // ciphername
-		serializeString("none"), // kdfname
-		serializeString(""),     // no kdfoptions
+		serializeString(cipherName),
+		serializeString(kdfName),
+		serializeKDFOptions(kdfOpts),
 		// One single key
 		serializeUint32(1),
 		// First copy of public key
 		serializeString(pubBlob),
-		// Followed by the data, only plain supported
-		serializeString(privBlob),
+		// Followed by the data, plain or encrypted.
+		serializeString(privBlobEncrypted),
 	}, nil)
 
 	return pem.Encode(w, &pem.Block{Type: pemPrivateKeyTag, Bytes: blob})
 }
 
-func WritePrivateKeyFile(w io.Writer, algoName string, pub []byte, priv []byte) error {
+func WritePrivateKeyFile(w io.Writer, passphrase string, algoName string, pub []byte, priv []byte) error {
 	var nonce [4]byte
 	_, err := rand.Read(nonce[:])
 	if err != nil {
 		return err
 	}
-	return writePrivateKeyFile(w, algoName, pub, priv, nonce)
+	var encrypter encryptFunc
+	if passphrase == "" {
+		encrypter = plainEncrypter
+	} else {
+		encrypter, err = passphraseEncrypter(passphrase)
+		if err != nil {
+			return err
+		}
+	}
+	return writePrivateKeyFile(w, algoName, pub, priv, nonce, encrypter)
 }
 
 // Reads the inner private key data.
@@ -162,7 +174,7 @@ func readPrivateKeyInner(r io.Reader, algoName string, pubBlob []byte) (crypto.S
 		return nil, err
 	}
 	if n1 != n2 {
-		return nil, fmt.Errorf("invalid key")
+		return nil, fmt.Errorf("wrong passphrase or invalid key")
 	}
 
 	if err := readSkip(r, pubBlob); err != nil {
@@ -204,19 +216,41 @@ func readPrivateKey(r io.Reader, fileName string) (crypto.Signer, error) {
 		return nil, err
 	}
 
+	var decrypter decryptFunc
+	var blockSize int
 	cipherName, err := readString(r, 40)
 	if err != nil {
 		return nil, fmt.Errorf("reading ciphername: %w", err)
 	}
-	if string(cipherName) != "none" {
-		return nil, fmt.Errorf("unsupported private key cipher: %s", cipherName)
-	}
-	if err := readSkip(r, bytes.Join([][]byte{
-		serializeString("none"),
-		serializeString(""),
-		serializeUint32(opensshPrivKeyKeysCount),
-	}, nil)); err != nil {
-		return nil, fmt.Errorf("cipher is %s: %w", cipherName, err)
+	if string(cipherName) == "none" {
+		if err := readSkip(r, bytes.Join([][]byte{
+			serializeString("none"),
+			serializeKDFOptions(nil),
+			serializeUint32(opensshPrivKeyKeysCount),
+		}, nil)); err != nil {
+			return nil, fmt.Errorf("cipher is %s: %w", cipherName, err)
+		}
+		decrypter, blockSize = plainDecrypter()
+	} else {
+		kdfName, err := readString(r, 40)
+		if err != nil {
+			return nil, fmt.Errorf("reading kdfname: %w", err)
+		}
+		kdfOpts, err := readKDFOptions(r)
+		if err != nil {
+			return nil, fmt.Errorf("reading kdfoptions: %w", err)
+		}
+		if err := readSkip(r, serializeUint32(opensshPrivKeyKeysCount)); err != nil {
+			return nil, fmt.Errorf("cipher is %s, kdfname is %s: %w", cipherName, kdfName, err)
+		}
+		pass, err := ReadSecret(fmt.Sprintf("Enter passphrase for file %s:", fileName))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		decrypter, blockSize, err = passphraseDecrypter(string(pass), string(cipherName), string(kdfName), kdfOpts)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Large enough for Ed25519 and ML-DSA-44
@@ -229,16 +263,21 @@ func readPrivateKey(r io.Reader, fileName string) (crypto.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading algoname: %w", err)
 	}
-	// Large enough for the plain blob of supported algos
-	privBlob, err := readString(r, 2696)
+	// Large enough for the encrypted/plain blob of supported algos
+	privBlobEncrypted, err := readString(r, 2704)
 	if err != nil {
 		return nil, fmt.Errorf("reading privblob: %w", err)
 	}
-	if length := len(privBlob); (length % 8) != 0 {
-		return nil, fmt.Errorf("length %d not divisable by %d", length, 8)
+	if length := len(privBlobEncrypted); (length % blockSize) != 0 {
+		return nil, fmt.Errorf("length %d not divisable by %d", length, blockSize)
 	}
 
-	return parseBytes(privBlob, 8,
+	privBlob, err := decrypter(privBlobEncrypted)
+	if err != nil {
+		return nil, fmt.Errorf("failed decrypt: %w", err)
+	}
+
+	return parseBytes(privBlob, blockSize,
 		func(r io.Reader) (crypto.Signer, error) {
 			signer, err := readPrivateKeyInner(r, string(algoName), pubBlob)
 			if err != nil {
@@ -250,7 +289,7 @@ func readPrivateKey(r io.Reader, fileName string) (crypto.Signer, error) {
 
 // Reads an ASCII format private key a supported type (Ed25519 or
 // ML-DSA-44). Supports only the case of a single key per file. The
-// format is plain, unencrypted OpenSSH PEM only.
+// format is plain or encrypted OpenSSH PEM.
 func ReadPrivateKeyFile(fileName string) (crypto.Signer, error) {
 	ascii, err := os.ReadFile(fileName)
 	if err != nil {
@@ -272,4 +311,24 @@ func ReadPrivateKeyFile(fileName string) (crypto.Signer, error) {
 	}
 
 	return signer, nil
+}
+
+// ReadSecret prompts the user to enter a passphrase without echoing
+// the characters to the terminal. It requires an attached terminal.
+func ReadSecret(prompt string) ([]byte, error) {
+	terminal, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err == nil {
+		defer terminal.Close()
+	} else if term.IsTerminal(int(os.Stdin.Fd())) {
+		terminal = os.Stdin
+	} else {
+		return nil, fmt.Errorf("no terminal for reading passphrase")
+	}
+	fmt.Fprintf(terminal, "%s ", prompt)
+	pass, err := term.ReadPassword(int(terminal.Fd()))
+	fmt.Fprintf(terminal, "\n")
+	if err != nil {
+		return nil, err
+	}
+	return pass, nil
 }

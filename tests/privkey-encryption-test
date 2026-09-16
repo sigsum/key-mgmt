@@ -1,0 +1,30 @@
+#!/bin/sh
+
+set -e
+
+cd "$(dirname "$0")"
+
+rm -f tmp.*
+
+cleanup() {
+    pid=$(cat tmp.pid 2>/dev/null) || return 0
+    kill -HUP "${pid}"
+}
+
+trap cleanup EXIT
+
+pass="correct horse battery staple $$"
+go run ../cmd/genkey-mldsa44 -t ed25519 -N "$pass" -o tmp.key >/dev/null
+mv tmp.key.pub tmp.key.pub.genkey
+
+cat <<EOF >tmp.echopass.sh
+#!/bin/bash
+echo $pass
+EOF
+chmod +x tmp.echopass.sh
+
+export SSH_ASKPASS=./tmp.echopass.sh
+export SSH_ASKPASS_REQUIRE=force
+ssh-keygen -y -f tmp.key >tmp.key.pub.sshkeygen
+
+cmp tmp.key.pub.genkey tmp.key.pub.sshkeygen

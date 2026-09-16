@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 rm -f tmp.*
 
-go run ../cmd/genkey-mldsa44 -o tmp.key >/dev/null
+go run ../cmd/genkey-mldsa44 -N "" -o tmp.key >/dev/null
 fp=$(go run ../cmd/genkey-mldsa44 -l tmp.key)
 [ -n "$fp" ]
 

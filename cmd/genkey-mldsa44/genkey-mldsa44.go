@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/mldsa"
 	"crypto/sha256"
@@ -13,21 +14,31 @@ import (
 	"sigsum.org/key-mgmt/internal/agent"
 )
 
+// The Ed25519 support is used for testing openssh PEM privkey
+// encryption interop with ssh-keygen (which does not support
+// ML-DSA-44).
+
 func main() {
 	const usage = `
 Generate ML-DSA-44 private key
 
 The generated ML-DSA-44 private key is by default printed to stdout in
 OpenSSH PEM format, followed by the SSH public key (1 line).
+
+The program asks for a passphrase for encrypting the private key
+before writing it. If an empty passphrase is entered the private key
+will not be encrypted.
 `
 	showHelp := false
 	outFile := ""
 	showFile := ""
 	keyType := "mldsa44"
+	passphrase := ""
 
 	set := getopt.New()
 	set.FlagLong(&showHelp, "help", 'h', "Show this help")
 	set.FlagLong(&outFile, "output", 'o', "Output generated private key to filename, its SSH public key to filename.pub, and the fingerprint to stdout", "filename")
+	set.FlagLong(&passphrase, "passphrase", 'N', "Set passphrase for encryption, empty string for no encryption", "string")
 	set.Flag(&keyType, 't', "Set type of key to generate, mldsa44 or ed25519", "keytype")
 	set.FlagLong(&showFile, "show", 'l', "Show SSH public key fingerprint from private key in file", "filename")
 	set.SetParameters("")
@@ -48,8 +59,8 @@ OpenSSH PEM format, followed by the SSH public key (1 line).
 			fmt.Fprintf(os.Stderr, "Only one of the -o and -l options can be used at once\n")
 			os.Exit(2)
 		}
-		if set.IsSet('t') {
-			fmt.Fprintf(os.Stderr, "Options -t can only be used when generating a key, not with -l\n")
+		if set.IsSet('t') || set.IsSet('N') {
+			fmt.Fprintf(os.Stderr, "Options -t and -N can only be used when generating a key, not with -l\n")
 			os.Exit(2)
 		}
 	}
@@ -61,7 +72,7 @@ OpenSSH PEM format, followed by the SSH public key (1 line).
 	if showFile != "" {
 		err = showkey(showFile)
 	} else {
-		err = genkey(outFile, keyType)
+		err = genkey(outFile, keyType, set.Lookup("passphrase"))
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
@@ -87,7 +98,7 @@ func showkey(privFile string) error {
 	return nil
 }
 
-func genkey(outFile string, keyType string) error {
+func genkey(outFile string, keyType string, passphraseOpt getopt.Option) error {
 	var algoName string
 	var privBytes, pubBytes []byte
 	switch keyType {
@@ -111,6 +122,22 @@ func genkey(outFile string, keyType string) error {
 		return fmt.Errorf("unsupported keytype: %s", keyType)
 	}
 
+	var passphrase string
+	if passphraseOpt.Seen() {
+		passphrase = passphraseOpt.Value().String()
+	} else {
+		pass, err := agent.ReadSecret("Enter passphrase (empty for no encryption):")
+		if err != nil {
+			return fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		if again, err := agent.ReadSecret("Confirm passphrase:"); err != nil {
+			return fmt.Errorf("failed to read passphrase: %w", err)
+		} else if !bytes.Equal(pass, again) {
+			return fmt.Errorf("passphrases did not match")
+		}
+		passphrase = string(pass)
+	}
+
 	var f *os.File
 	if outFile == "" {
 		f = os.Stdout
@@ -123,7 +150,7 @@ func genkey(outFile string, keyType string) error {
 		defer f.Close()
 	}
 
-	if err := agent.WritePrivateKeyFile(f, algoName, pubBytes, privBytes); err != nil {
+	if err := agent.WritePrivateKeyFile(f, passphrase, algoName, pubBytes, privBytes); err != nil {
 		return err
 	}
 

@@ -39,8 +39,8 @@ Start an ssh-agent that acts as a signing oracle.
 
 The following types of keys can be used:
 
-- File with Ed25519 or ML-DSA-44 private key in OpenSSH PEM format.
-  Only plain, unencrypted private key.
+- File with Ed25519 or ML-DSA-44 private key in OpenSSH PEM format,
+  optionally encrypted with aes256-ctr (ssh-keygen's default cipher).
 
 - Ed25519 private key managed by a yubihsm2 device.
 
