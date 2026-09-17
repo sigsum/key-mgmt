@@ -21,6 +21,7 @@ import (
 
 	"sigsum.org/key-mgmt/internal/agent"
 	"sigsum.org/key-mgmt/internal/hsm"
+	"sigsum.org/key-mgmt/internal/ui"
 )
 
 // Since we need to call os.Exit to pass an exit code, we need a
@@ -39,13 +40,15 @@ Start an ssh-agent that acts as a signing oracle.
 
 The following types of keys can be used:
 
-- File with Ed25519 or ML-DSA-44 private key in OpenSSH PEM format.
-  Only plain, unencrypted private key.
+- File with Ed25519 or ML-DSA-44 private key in OpenSSH PEM format,
+  optionally encrypted with aes256-ctr (ssh-keygen's default cipher).
 
 - Ed25519 private key managed by a yubihsm2 device.
 
 To use a private key file, pass the -k option with the name of the
-file. The -k option can be used several times for multiple keys.
+file. The -k option can be used several times for multiple keys. For
+each file that contains an encrypted private key, you will be prompted
+on the terminal (with the file name) to input the passphrase.
 
 To use a yubihsm key, you need to specify both an authorization file
 (-a option) and key id (-i option). The contents of the authorization
@@ -266,7 +269,7 @@ func openSocket(socketName string) (net.Listener, error) {
 }
 
 func sshFromFile(keyFile string) (string, agent.SSHSign, error) {
-	signer, err := agent.ReadPrivateKeyFile(keyFile)
+	signer, err := agent.ReadPrivateKeyFile(keyFile, ui.NewTerminalGetPassphrase(keyFile))
 	if err != nil {
 		return "", nil, fmt.Errorf("read private key from file %q failed: %w", keyFile, err)
 	}

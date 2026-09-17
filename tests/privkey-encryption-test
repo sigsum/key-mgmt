@@ -1,0 +1,51 @@
+#!/bin/sh
+
+set -e
+
+cd "$(dirname "$0")"
+
+rm -f tmp.*
+
+cleanup() {
+    pid=$(cat tmp.pid 2>/dev/null) || return 0
+    kill -HUP "${pid}"
+}
+
+trap cleanup EXIT
+
+pass="correct horse battery staple $$"
+cat <<EOF >tmp.echopass.sh
+#!/bin/bash
+echo $pass
+EOF
+chmod +x tmp.echopass.sh
+
+# Generate Ed25519 key with our genkey
+go run ../cmd/genkey-mldsa44 -t ed25519 -N "$pass" -o tmp.key >/dev/null
+mv tmp.key.pub tmp.key.pub.genkey
+# Pull out the pubkey from the privkey using ssh-keygen, which does
+# require decryption
+SSH_ASKPASS=./tmp.echopass.sh SSH_ASKPASS_REQUIRE=force \
+  ssh-keygen -y -f tmp.key >tmp.key.pub.sshkeygen
+cmp tmp.key.pub.genkey tmp.key.pub.sshkeygen
+
+# Generate Ed25519 key with ssh-keygen
+ssh-keygen -q -t ed25519 -N "$pass" -f tmp.key2
+sshfp=$(ssh-keygen -l -f tmp.key2 | grep -o "SHA256:\S\+")
+[ -n "$sshfp" ]
+# Get the pubkey fingerprint using our genkey, requiring decryption of
+# the privkey. Using script(1) to get passphrase "typed" on a tty.
+printf "%s\n" "$pass" | script -c "go run ../cmd/genkey-mldsa44 -l tmp.key2" tmp.scriptout >/dev/null
+# Lines apparently end with \r\n
+grep -q "^$sshfp.$" tmp.scriptout
+
+# Check that our genkey can encrypt and decrypt our ML-DSA-44
+sshfp=$(go run ../cmd/genkey-mldsa44 -o tmp.key3 -N "$pass")
+[ -n "$sshfp" ]
+printf "%s\n" "$pass" | script -c "go run ../cmd/genkey-mldsa44 -l tmp.key3" tmp.scriptout2 >/dev/null
+grep -q "^$sshfp.$" tmp.scriptout2
+
+# Check also without encryption
+sshfp=$(go run ../cmd/genkey-mldsa44 -o tmp.key4 -N "")
+[ -n "$sshfp" ]
+go run ../cmd/genkey-mldsa44 -l tmp.key4 | grep -q "^$sshfp$"

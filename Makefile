@@ -12,3 +12,4 @@ check:
 	./tests/pid-stdout-test
 	./tests/inetd-test
 	./tests/signverify-mldsa-test
+	./tests/privkey-encryption-test
