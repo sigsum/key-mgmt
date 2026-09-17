@@ -10,6 +10,9 @@ NEWS for key-mgmt v0.2.x
     * Add genkey-mldsa44 tool to generate ML-DSA-44 private keys in
       the OpenSSH PEM-format.
 
+    * sigsum-agent: Add support for loading passphrase encrypted
+      private keys. Passphrase(s) are input on terminal only.
+
     Bug fixes:
 
     * sigsum-agent: Fix file descriptor leak.

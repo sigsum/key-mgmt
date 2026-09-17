@@ -65,6 +65,13 @@ func readString(r io.Reader, max int) ([]byte, error) {
 	return readBytes(r, int(len))
 }
 
+func readStringLen(r io.Reader, len int) ([]byte, error) {
+	if err := readSkip(r, serializeUint32(uint32(len))); err != nil {
+		return nil, err
+	}
+	return readBytes(r, len)
+}
+
 // Reads and skips raw prefix.
 func readSkip(r io.Reader, prefix []byte) error {
 	buf, err := readBytes(r, len(prefix))
