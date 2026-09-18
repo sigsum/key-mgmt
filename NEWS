@@ -11,7 +11,8 @@ NEWS for key-mgmt v0.2.x
       the OpenSSH PEM-format.
 
     * sigsum-agent: Add support for loading passphrase encrypted
-      private keys. Passphrase(s) are input on terminal only.
+      private keys. Passphrase(s) are input on terminal, or provided
+      in a file (only, no fallback to terminal input).
 
     Bug fixes:
 
