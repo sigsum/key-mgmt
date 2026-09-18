@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/ed25519"
 	"crypto/mldsa"
@@ -14,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -49,6 +51,8 @@ To use a private key file, pass the -k option with the name of the
 file. The -k option can be used several times for multiple keys. For
 each file that contains an encrypted private key, you will be prompted
 on the terminal (with the file name) to input the passphrase.
+Alternatively, you can use the -p option and provide a file with
+filenames and passphrases; no prompting will be done in this case.
 
 To use a yubihsm key, you need to specify both an authorization file
 (-a option) and key id (-i option). The contents of the authorization
@@ -102,6 +106,7 @@ stdout, they are written as one line each, pid first.
 	keyId := -1
 	authFile := ""
 	keyFiles := []string{}
+	keypassFile := ""
 	socketName := ""
 	pidFile := ""
 	retry := false
@@ -114,6 +119,7 @@ stdout, they are written as one line each, pid first.
 	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
 	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
 	set.FlagLong(&keyFiles, "key-file", 'k', "Ed25519 or ML-DSA-44 private key file in OpenSSH PEM Format. Can be used several times.")
+	set.FlagLong(&keypassFile, "keypass-file", 'p', "file with: keyfilename:passphrase")
 	set.FlagLong(&socketName, "socket-name", 's', "name of unix socket")
 	set.FlagLong(&pidFile, "pid-file", 0, "for writing pid of agent or command, '-' means stdout")
 	set.FlagLong(&retry, "retry", 0, "retry a few times if connecting to the HSM fails at startup")
@@ -134,6 +140,17 @@ stdout, they are written as one line each, pid first.
 
 	if keyId >= 0 && len(authFile) == 0 {
 		return 0, fmt.Errorf("The --auth-file option is required with --key-id.")
+	}
+
+	newGetPassphraseFunc := ui.NewTerminalGetPassphrase
+	if set.IsSet('p') {
+		if len(keyFiles) == 0 {
+			return 0, fmt.Errorf("the --keypass-file option can only be used with one or more --key-file")
+		}
+		newGetPassphraseFunc, err = readKeypassFile(keypassFile)
+		if err != nil {
+			return 0, fmt.Errorf("reading keypass file %q: %w", keypassFile, err)
+		}
 	}
 
 	printSocket := false
@@ -176,7 +193,7 @@ stdout, they are written as one line each, pid first.
 	}
 	keys := make(map[string]agent.SSHSign)
 	for _, keyFile := range keyFiles {
-		sshKey, sshSign, err := sshFromFile(keyFile)
+		sshKey, sshSign, err := sshFromFile(keyFile, newGetPassphraseFunc)
 		if err != nil {
 			return 0, err
 		}
@@ -252,6 +269,50 @@ stdout, they are written as one line each, pid first.
 	return 0, nil
 }
 
+func readKeypassFile(keypassFile string) (func(string) agent.GetPassphraseFunc, error) {
+	passphrases := make(map[string]string)
+	f, err := os.Open(keypassFile)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	for lineNum := 1; sc.Scan(); lineNum++ {
+		line := sc.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("line %d: expected format 'keyfilename:passphrase', got %q", lineNum, line)
+		}
+		keyFile, pass := parts[0], parts[1]
+		if _, ok := passphrases[keyFile]; ok {
+			return nil, fmt.Errorf("line %d: duplicate key file %q", lineNum, keyFile)
+		}
+		passphrases[keyFile] = pass
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(passphrases) == 0 {
+		return nil, fmt.Errorf("contains no passphrases")
+	}
+
+	return func(keyFile string) agent.GetPassphraseFunc {
+		var errNoPass error = nil
+		pass, ok := passphrases[keyFile]
+		if !ok {
+			errNoPass = fmt.Errorf("keypass file %q contained no passphrase for key file %q", keypassFile, keyFile)
+		}
+		return func() (string, error) {
+			return pass, errNoPass
+		}
+	}, nil
+}
+
 // If the file isn't a listening socket, returns nil listener, no error.
 func inetdSocket(f *os.File) (net.Listener, error) {
 	acceptConn, err := syscall.GetsockoptInt(int(f.Fd()), syscall.SOL_SOCKET, syscall.SO_ACCEPTCONN)
@@ -268,8 +329,8 @@ func openSocket(socketName string) (net.Listener, error) {
 	return net.Listen("unix", socketName)
 }
 
-func sshFromFile(keyFile string) (string, agent.SSHSign, error) {
-	signer, err := agent.ReadPrivateKeyFile(keyFile, ui.NewTerminalGetPassphrase(keyFile))
+func sshFromFile(keyFile string, newGetPassphraseFunc func(string) agent.GetPassphraseFunc) (string, agent.SSHSign, error) {
+	signer, err := agent.ReadPrivateKeyFile(keyFile, newGetPassphraseFunc(keyFile))
 	if err != nil {
 		return "", nil, fmt.Errorf("read private key from file %q failed: %w", keyFile, err)
 	}
