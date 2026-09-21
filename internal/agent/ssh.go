@@ -8,7 +8,7 @@ import (
 	"math"
 )
 
-// SSH protocol utilities, copied from sigsum-go/internal/ssh.go
+// SSH protocol utilities, based on sigsum-go/internal/ssh.go
 
 type bytesOrString interface{ []byte | string }
 
@@ -92,5 +92,5 @@ func parseBytes[T any](blob []byte, padding []byte, reader func(io.Reader) (T, e
 	if !bytes.Equal(leftOver, padding[:len(leftOver)]) {
 		return res, fmt.Errorf("unexpected padding bytes: %x", leftOver)
 	}
-	return res, err
+	return res, nil
 }

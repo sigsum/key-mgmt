@@ -1,5 +1,15 @@
 NEWS for key-mgmt v0.2.x
 
+    Features:
+
+    * sigsum-agent: Support -k option multiple times.
+
+    * sigsum-agent: Support ML-DSA-44 private keys in OpenSSH
+      PEM-format, serialization modelled after Ed25519.
+
+    * Add genkey-mldsa44 tool to generate ML-DSA-44 private keys in
+      the OpenSSH PEM-format.
+
     Bug fixes:
 
     * sigsum-agent: Fix file descriptor leak.

@@ -1,19 +1,10 @@
 package agent
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/ed25519"
 	"fmt"
 )
-
-// Both keys and signatures are serialized in the same way.
-func serializeEd25519(blob []byte) []byte {
-	return bytes.Join([][]byte{
-		serializeString("ssh-ed25519"),
-		serializeString(blob)},
-		nil)
-}
 
 func ed25519Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	sig, err := signer.Sign(nil, msg, crypto.Hash(0))
@@ -23,7 +14,7 @@ func ed25519Sign(signer crypto.Signer, msg []byte) ([]byte, error) {
 	if len(sig) != ed25519.SignatureSize {
 		return nil, fmt.Errorf("not an Ed25519 signature, bad length %d", len(sig))
 	}
-	return serializeEd25519(sig), nil
+	return SerializeItem(AlgEd25519, sig), nil
 }
 
 func SSHFromEd25519(signer crypto.Signer) (string, SSHSign, error) {
@@ -35,7 +26,7 @@ func SSHFromEd25519(signer crypto.Signer) (string, SSHSign, error) {
 	if len(pub) != ed25519.PublicKeySize {
 		return "", nil, fmt.Errorf("not an Ed25519 key, unexpected length %d", len(pub))
 	}
-	return string(serializeEd25519(pub)),
+	return string(SerializeItem(AlgEd25519, pub)),
 		func(msg []byte) ([]byte, error) {
 			return ed25519Sign(signer, msg)
 		}, nil
