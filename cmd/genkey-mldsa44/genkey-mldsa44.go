@@ -82,7 +82,11 @@ will not be encrypted.
 }
 
 func showkey(privFile string) error {
-	signer, err := agent.ReadPrivateKeyFile(privFile, ui.NewTerminalGetPassphrase(privFile))
+	data, err := os.ReadFile(privFile)
+	if err != nil {
+		return err
+	}
+	signer, err := agent.ParsePrivateKeyFile(data, ui.NewTerminalGetPassphrase(privFile))
 	if err != nil {
 		return fmt.Errorf("reading private key file %q failed: %w", privFile, err)
 	}

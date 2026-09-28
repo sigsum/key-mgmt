@@ -51,15 +51,21 @@ func NewPassphraseEncryptor(passphrase string) encryptFunc {
 	if passphrase == "" {
 		return noneEncryptor
 	}
-	return newAes256ctrEncryptor(passphrase)
+	return newAes256ctrEncryptor(passphrase, func() ([kdfSaltLen]byte, error) {
+		var salt [kdfSaltLen]byte
+		_, err := rand.Read(salt[:])
+		return salt, err
+	})
 }
 
-func newAes256ctrEncryptor(passphrase string) encryptFunc {
+func newAes256ctrEncryptor(passphrase string, randSalt func() ([kdfSaltLen]byte, error)) encryptFunc {
 	return func(privBlobUnpadded []byte) ([]byte, string, string, *kdfOptions, error) {
 		kdfOpts := &kdfOptions{rounds: kdfRounds}
-		if _, err := rand.Read(kdfOpts.salt[:]); err != nil {
+		salt, err := randSalt()
+		if err != nil {
 			return nil, "", "", nil, err
 		}
+		kdfOpts.salt = salt
 		encrypted, err := aes256CtrPassphraseCrypt(passphrase, kdfOpts, padBlob(privBlobUnpadded, aes.BlockSize))
 		if err != nil {
 			return nil, "", "", nil, err
