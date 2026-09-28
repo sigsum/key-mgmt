@@ -3,6 +3,8 @@ default:
 
 # Keep things simple, no test driver script.
 check:
+	go build ./...
+	go test ./...
 	./tests/sock-test
 	./tests/list-test
 	./tests/sign-test
