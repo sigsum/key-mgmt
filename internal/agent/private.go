@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 )
 
 // This implementation supports Ed25519 and ML-DSA-44 keys. It
@@ -301,11 +300,7 @@ func readPrivateKey(r io.Reader, getPassphrase GetPassphraseFunc) (crypto.Signer
 // or ML-DSA-44). Supports only the case of a single key per file. The
 // format is OpenSSH PEM, and the contained private key may be plain
 // or encrypted.
-func ReadPrivateKeyFile(fileName string, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
-	ascii, err := os.ReadFile(fileName)
-	if err != nil {
-		return nil, err
-	}
+func ReadPrivateKeyFile(ascii []byte, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
 	block, _ := pem.Decode(ascii)
 	if block == nil {
 		return nil, ErrNotPEM
@@ -318,8 +313,7 @@ func ReadPrivateKeyFile(fileName string, getPassphrase GetPassphraseFunc) (crypt
 			return readPrivateKey(r, getPassphrase)
 		})
 	if err != nil {
-		return nil, fmt.Errorf("parsing private key file %q failed: %v",
-			fileName, err)
+		return nil, fmt.Errorf("parsing private key: %w", err)
 	}
 
 	return signer, nil

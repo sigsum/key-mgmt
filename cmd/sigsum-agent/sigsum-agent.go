@@ -269,7 +269,11 @@ func openSocket(socketName string) (net.Listener, error) {
 }
 
 func sshFromFile(keyFile string) (string, agent.SSHSign, error) {
-	signer, err := agent.ReadPrivateKeyFile(keyFile, ui.NewTerminalGetPassphrase(keyFile))
+	data, err := os.ReadFile(keyFile)
+	if err != nil {
+		return "", nil, err
+	}
+	signer, err := agent.ReadPrivateKeyFile(data, ui.NewTerminalGetPassphrase(keyFile))
 	if err != nil {
 		return "", nil, fmt.Errorf("read private key from file %q failed: %w", keyFile, err)
 	}
