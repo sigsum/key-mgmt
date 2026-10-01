@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 
+	"filippo.io/torchwood"
 	"github.com/pborman/getopt/v2"
 	"sigsum.org/key-mgmt/internal/agent"
 )
@@ -22,14 +23,18 @@ OpenSSH PEM format, followed by the SSH public key (1 line).
 `
 	showHelp := false
 	outFile := ""
-	showFile := ""
+	showFPFile := ""
+	showVkeyFile := ""
+	vkeyName := ""
 	keyType := "mldsa44"
 
 	set := getopt.New()
 	set.FlagLong(&showHelp, "help", 'h', "Show this help")
 	set.FlagLong(&outFile, "output", 'o', "Output generated private key to filename, its SSH public key to filename.pub, and the fingerprint to stdout", "filename")
 	set.Flag(&keyType, 't', "Set type of key to generate, mldsa44 or ed25519", "keytype")
-	set.FlagLong(&showFile, "show", 'l', "Show SSH public key fingerprint from private key in file", "filename")
+	set.FlagLong(&showFPFile, "show", 'l', "Show SSH public key fingerprint from private key in file", "filename")
+	set.Flag(&showVkeyFile, 'e', "Show cosigner vkey of public key from private key in file", "filename")
+	set.Flag(&vkeyName, 'n', "Set key name for vkey. Required for -e", "keyname")
 	set.SetParameters("")
 	err := set.Getopt(os.Args, nil)
 	// Check early if user wants help
@@ -43,23 +48,37 @@ OpenSSH PEM format, followed by the SSH public key (1 line).
 		set.PrintUsage(os.Stderr)
 		os.Exit(2)
 	}
+	n := 0
+	if set.IsSet('o') {
+		n++
+	}
 	if set.IsSet('l') {
-		if set.IsSet('o') {
-			fmt.Fprintf(os.Stderr, "Only one of the -o and -l options can be used at once\n")
-			os.Exit(2)
-		}
-		if set.IsSet('t') {
-			fmt.Fprintf(os.Stderr, "Options -t can only be used when generating a key, not with -l\n")
-			os.Exit(2)
-		}
+		n++
+	}
+	if set.IsSet('e') {
+		n++
+	}
+	if n > 1 {
+		fmt.Fprintf(os.Stderr, "Only one of the -o, -l, and -e options can be used at once\n")
+		os.Exit(2)
+	}
+	if set.IsSet('t') && (set.IsSet('l') || set.IsSet('e')) {
+		fmt.Fprintf(os.Stderr, "Option -t can only be used when generating a key\n")
+		os.Exit(2)
+	}
+	if set.IsSet('e') && !set.IsSet('n') {
+		fmt.Fprintf(os.Stderr, "Option -e requires a key name set using -n\n")
+		os.Exit(2)
 	}
 	if set.NArgs() > 0 {
 		fmt.Fprintf(os.Stderr, "Unexpected positional args: %q\n", set.Args())
 		os.Exit(2)
 	}
 
-	if showFile != "" {
-		err = showkey(showFile)
+	if showFPFile != "" {
+		err = showFP(showFPFile)
+	} else if showVkeyFile != "" {
+		err = showVkey(showVkeyFile, vkeyName)
 	} else {
 		err = genkey(outFile, keyType)
 	}
@@ -69,7 +88,7 @@ OpenSSH PEM format, followed by the SSH public key (1 line).
 	}
 }
 
-func showkey(privFile string) error {
+func showFP(privFile string) error {
 	signer, err := agent.ReadPrivateKeyFile(privFile)
 	if err != nil {
 		return fmt.Errorf("reading private key file %q failed: %w", privFile, err)
@@ -84,6 +103,19 @@ func showkey(privFile string) error {
 		return fmt.Errorf("unsupported signer type from file %q: %T", privFile, priv)
 	}
 	fmt.Printf("%s\n", fp)
+	return nil
+}
+
+func showVkey(privFile string, keyName string) error {
+	signer, err := agent.ReadPrivateKeyFile(privFile)
+	if err != nil {
+		return fmt.Errorf("reading private key file %q failed: %w", privFile, err)
+	}
+	v, err := torchwood.NewCosignatureVerifierFromKey(keyName, signer.Public())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\n", v)
 	return nil
 }
 
