@@ -49,11 +49,14 @@ To use a private key file, pass the -k option with the name of the
 file. The -k option can be used several times for multiple keys. For
 each file that contains an encrypted private key, you will be prompted
 on the terminal (with the file name) to input the passphrase.
+Alternatively, you can use the -p option and provide a file with lines
+containing key-file and passphrase (separated by a single ':'
+character). No prompting will be done in this case.
 
-To use a yubihsm key, you need to specify both an authorization file
-(-a option) and key id (-i option). The contents of the authorization
-file is a single line with the the authorization id (decimal number),
-and the corresponding passphrase, separated by a single ':' character.
+To use a yubihsm key, you need to specify both a passphrase file (-a
+option) and key id (-i option). The contents of the passphrase file is
+a single line with the authorization id (decimal number), and the
+corresponding passphrase, separated by a single ':' character.
 
 When using a yubihsm key, the agent needs a separate yubihsm-connector
 process to be running. By default, the connector is expected to
@@ -100,8 +103,9 @@ stdout, they are written as one line each, pid first.
 	// Default connector url
 	connector := "localhost:12345"
 	keyId := -1
-	authFile := ""
+	hsmPassFile := ""
 	keyFiles := []string{}
+	keyPassFile := ""
 	socketName := ""
 	pidFile := ""
 	retry := false
@@ -112,8 +116,9 @@ stdout, they are written as one line each, pid first.
 	set.SetUsage(func() { fmt.Print(usage) })
 	set.FlagLong(&connector, "connector", 'c', "host:port")
 	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
-	set.FlagLong(&authFile, "auth-file", 'a', "file with yubihsm auth-id:passphrase")
+	set.FlagLong(&hsmPassFile, "hsm-passphrase-file", 'a', "for yubihsm, file with auth-id:passphrase")
 	set.FlagLong(&keyFiles, "key-file", 'k', "Ed25519 or ML-DSA-44 private key file in OpenSSH PEM Format. Can be used several times.")
+	set.FlagLong(&keyPassFile, "key-passphrase-file", 'p', "file with lines of: key-file:passphrase")
 	set.FlagLong(&socketName, "socket-name", 's', "name of unix socket")
 	set.FlagLong(&pidFile, "pid-file", 0, "for writing pid of agent or command, '-' means stdout")
 	set.FlagLong(&retry, "retry", 0, "retry a few times if connecting to the HSM fails at startup")
@@ -132,8 +137,24 @@ stdout, they are written as one line each, pid first.
 		return 0, nil
 	}
 
-	if keyId >= 0 && len(authFile) == 0 {
-		return 0, fmt.Errorf("The --auth-file option is required with --key-id.")
+	if keyId >= 0 && len(hsmPassFile) == 0 {
+		return 0, fmt.Errorf("the --hsm-passphrase-file option is required with --key-id")
+	}
+
+	newGetPassphraseFunc := ui.NewTerminalGetPassphrase
+	if set.IsSet('p') {
+		if len(keyFiles) == 0 {
+			return 0, fmt.Errorf("the --key-passphrase-file option must be used with one or more --key")
+		}
+		r, err := os.Open(keyPassFile)
+		if err != nil {
+			return 0, fmt.Errorf("failed to open %q: %w", keyPassFile, err)
+		}
+		newGetPassphraseFunc, err = ui.ParseKeyPassFile(r)
+		_ = r.Close()
+		if err != nil {
+			return 0, fmt.Errorf("%s:%w", keyPassFile, err)
+		}
 	}
 
 	printSocket := false
@@ -176,14 +197,14 @@ stdout, they are written as one line each, pid first.
 	}
 	keys := make(map[string]agent.SSHSign)
 	for _, keyFile := range keyFiles {
-		sshKey, sshSign, err := sshFromFile(keyFile)
+		sshKey, sshSign, err := sshFromFile(keyFile, newGetPassphraseFunc)
 		if err != nil {
 			return 0, err
 		}
 		keys[sshKey] = sshSign
 	}
 	if keyId > 0 {
-		sshKey, sshSign, cleanup, err := sshFromEd25519HSM(keyId, authFile, connector, retry)
+		sshKey, sshSign, cleanup, err := sshFromEd25519HSM(keyId, hsmPassFile, connector, retry)
 		if err != nil {
 			return 0, err
 		}
@@ -268,12 +289,12 @@ func openSocket(socketName string) (net.Listener, error) {
 	return net.Listen("unix", socketName)
 }
 
-func sshFromFile(keyFile string) (string, agent.SSHSign, error) {
+func sshFromFile(keyFile string, newGetPassphraseFunc func(string) agent.GetPassphraseFunc) (string, agent.SSHSign, error) {
 	data, err := os.ReadFile(keyFile)
 	if err != nil {
 		return "", nil, err
 	}
-	signer, err := agent.ParsePrivateKeyFile(data, ui.NewTerminalGetPassphrase(keyFile))
+	signer, err := agent.ParsePrivateKeyFile(data, newGetPassphraseFunc(keyFile))
 	if err != nil {
 		return "", nil, fmt.Errorf("read private key from file %q failed: %w", keyFile, err)
 	}
@@ -287,22 +308,22 @@ func sshFromFile(keyFile string) (string, agent.SSHSign, error) {
 	}
 }
 
-func sshFromEd25519HSM(keyId int, authFile string, connector string, retry bool) (string, agent.SSHSign, func(), error) {
+func sshFromEd25519HSM(keyId int, hsmPassFile string, connector string, retry bool) (string, agent.SSHSign, func(), error) {
 	if keyId < 0 || keyId >= 0x10000 {
 		return "", nil, nil, fmt.Errorf("key id %d out of range", keyId)
 	}
-	buf, err := os.ReadFile(authFile)
+	buf, err := os.ReadFile(hsmPassFile)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("reading auth file %q failed: %w", authFile, err)
+		return "", nil, nil, fmt.Errorf("reading file %q failed: %w", hsmPassFile, err)
 	}
 	buf = bytes.TrimSpace(buf)
 	colon := bytes.Index(buf, []byte{':'})
 	if colon < 0 {
-		return "", nil, nil, fmt.Errorf("invalid auth file %q, missing ':'", authFile)
+		return "", nil, nil, fmt.Errorf("invalid file %q, missing ':'", hsmPassFile)
 	}
 	authId, err := strconv.ParseUint(string(buf[:colon]), 10, 16)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("invalid auth id in file %q: %w", authFile, err)
+		return "", nil, nil, fmt.Errorf("invalid auth id in file %q: %w", hsmPassFile, err)
 	}
 	authPassword := string(buf[colon+1:])
 	hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)

@@ -6,13 +6,6 @@ cd "$(dirname "$0")"
 
 rm -f tmp.*
 
-cleanup() {
-    pid=$(cat tmp.pid 2>/dev/null) || return 0
-    kill -HUP "${pid}"
-}
-
-trap cleanup EXIT
-
 pass="correct horse battery staple $$"
 cat <<EOF >tmp.echopass.sh
 #!/bin/bash
@@ -38,6 +31,11 @@ sshfp=$(ssh-keygen -l -f tmp.key2 | grep -o "SHA256:\S\+")
 printf "%s\n" "$pass" | script -c "go run ../cmd/genkey-mldsa44 -l tmp.key2" tmp.scriptout >/dev/null
 # Lines apparently end with \r\n
 grep -q "^$sshfp.$" tmp.scriptout
+
+# Check decrypting using key passfile (only). Towards the above
+# Ed25519 key, because using ssh-add
+printf "\n# test comment\ntmp.key2:%s\n" "$pass" >tmp.passfile
+go run ../cmd/sigsum-agent -p tmp.passfile -k tmp.key2 ssh-add -l 2>&1 | grep -q "\b$sshfp\b"
 
 # Check that our genkey can encrypt and decrypt our ML-DSA-44
 sshfp=$(go run ../cmd/genkey-mldsa44 -o tmp.key3 -N "$pass")
