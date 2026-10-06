@@ -219,11 +219,12 @@ witnesses are not operated by the same day-to-day operations team.
 
 The `sigsum-agent` program is a tiny ssh-agent daemon that computes Ed25519
 signatures by interacting with the `yubihsm-connector` protocol on localhost. To
-use a key, you need an "auth-file" containing the auth-id (decimal number) and
-the corresponding passphrase, separated by a `:` character, and the key-id.
-E.g., with the default configuration of these provisioning scripts, a log server
-key uses auth-id 200 and key-id 500, while a witness key uses auth-id 300 and
-key-id 600. An auth-file for the log server can be created using
+use a key, you need an "hsm-passphrase-file" containing the auth-id (decimal
+number) and the corresponding passphrase, separated by a `:` character, and the
+key-id. E.g., with the default configuration of these provisioning scripts, a
+log server key uses auth-id 200 and key-id 500, while a witness key uses auth-id
+300 and key-id 600. An hsm-passphrase-file for the log server can be created
+using
 
     $ (umask 077 && echo 200:SECRET-PASSPHRASE > log-auth)
 
