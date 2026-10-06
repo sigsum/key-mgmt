@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ed25519"
 	"crypto/mldsa"
 	"crypto/sha256"
@@ -13,6 +14,8 @@ import (
 	"github.com/pborman/getopt/v2"
 	"sigsum.org/key-mgmt/internal/agent"
 	"sigsum.org/key-mgmt/internal/ui"
+	"sigsum.org/sigsum-go/pkg/checkpoint"
+	sigsumcrypto "sigsum.org/sigsum-go/pkg/crypto"
 )
 
 // The Ed25519 support is used for testing openssh PEM privkey
@@ -20,7 +23,9 @@ import (
 // ML-DSA-44).
 
 func main() {
-	const usage = `
+	const (
+		groupOLE = "NOTE1"
+		usage    = `
 Generate ML-DSA-44 private key
 
 The generated ML-DSA-44 private key is by default printed to stdout in
@@ -29,19 +34,29 @@ OpenSSH PEM format, followed by the SSH public key (1 line).
 The program asks for a passphrase for encrypting the private key
 before writing it. If an empty passphrase is entered the private key
 will not be encrypted.
+
+` + groupOLE + `: options -o, -l, and -e are mutually exclusive
 `
+	)
 	showHelp := false
 	outFile := ""
-	showFile := ""
+	showFPFile := ""
+	showVkeyFile := ""
+	vkeyName := ""
 	keyType := "mldsa44"
 	passphrase := ""
 
 	set := getopt.New()
 	set.FlagLong(&showHelp, "help", 'h', "Show this help")
-	set.FlagLong(&outFile, "output", 'o', "Output generated private key to filename, its SSH public key to filename.pub, and the fingerprint to stdout", "filename")
+	set.FlagLong(&outFile, "output", 'o', "Output generated private key to filename, its SSH public key to filename.pub, and the fingerprint to stdout", "filename").
+		SetGroup(groupOLE)
 	set.FlagLong(&passphrase, "passphrase", 'N', "Set passphrase for encryption, empty string for no encryption", "string")
 	set.Flag(&keyType, 't', "Set type of key to generate, mldsa44 or ed25519", "keytype")
-	set.FlagLong(&showFile, "show", 'l', "Show SSH public key fingerprint from private key in file", "filename")
+	set.FlagLong(&showFPFile, "show", 'l', "Show SSH public key fingerprint from private key in file", "filename").
+		SetGroup(groupOLE)
+	set.Flag(&showVkeyFile, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of public key from private key in file. Requires -n.", "filename").
+		SetGroup(groupOLE)
+	set.Flag(&vkeyName, 'n', "Set key name for vkey. Required for -e.", "keyname")
 	set.SetParameters("")
 	err := set.Getopt(os.Args, nil)
 	// Check early if user wants help
@@ -55,23 +70,27 @@ will not be encrypted.
 		set.PrintUsage(os.Stderr)
 		os.Exit(2)
 	}
-	if set.IsSet('l') {
-		if set.IsSet('o') {
-			fmt.Fprintf(os.Stderr, "Only one of the -o and -l options can be used at once\n")
-			os.Exit(2)
-		}
-		if set.IsSet('t') || set.IsSet('N') {
-			fmt.Fprintf(os.Stderr, "Options -t and -N can only be used when generating a key, not with -l\n")
-			os.Exit(2)
-		}
+	if (set.IsSet('t') || set.IsSet('N')) && (set.IsSet('l') || set.IsSet('e')) {
+		fmt.Fprintf(os.Stderr, "Option -t and -N can only be used when generating a key\n")
+		os.Exit(2)
+	}
+	if set.IsSet('e') && !set.IsSet('n') {
+		fmt.Fprintf(os.Stderr, "Option -e requires a key name set using -n\n")
+		os.Exit(2)
+	}
+	if !set.IsSet('e') && set.IsSet('n') {
+		fmt.Fprintf(os.Stderr, "Option -n can only be used with -e\n")
+		os.Exit(2)
 	}
 	if set.NArgs() > 0 {
 		fmt.Fprintf(os.Stderr, "Unexpected positional args: %q\n", set.Args())
 		os.Exit(2)
 	}
 
-	if showFile != "" {
-		err = showkey(showFile)
+	if set.IsSet('l') {
+		err = showFP(showFPFile)
+	} else if set.IsSet('e') {
+		err = showVkey(showVkeyFile, vkeyName)
 	} else {
 		err = genkey(outFile, keyType, set.Lookup('N'))
 	}
@@ -81,26 +100,55 @@ will not be encrypted.
 	}
 }
 
-func showkey(privFile string) error {
-	data, err := os.ReadFile(privFile)
+func showFP(privFile string) error {
+	pub, err := pubkeyFromPrivFile(privFile)
 	if err != nil {
 		return err
 	}
-	signer, err := agent.ParsePrivateKeyFile(data, ui.NewTerminalGetPassphrase(privFile))
-	if err != nil {
-		return fmt.Errorf("reading private key file %q failed: %w", privFile, err)
-	}
 	var fp string
-	switch priv := signer.(type) {
-	case ed25519.PrivateKey:
-		fp = fingerprint(agent.AlgEd25519, priv.Public().(ed25519.PublicKey))
-	case *mldsa.PrivateKey:
-		fp = fingerprint(agent.AlgMLDSA44, priv.PublicKey().Bytes())
+	switch p := pub.(type) {
+	case ed25519.PublicKey:
+		fp = fingerprint(agent.AlgEd25519, p)
+	case *mldsa.PublicKey:
+		fp = fingerprint(agent.AlgMLDSA44, p.Bytes())
 	default:
-		return fmt.Errorf("unsupported signer type from file %q: %T", privFile, priv)
+		return fmt.Errorf("unsupported signer type from file %q: %T", privFile, p)
 	}
 	fmt.Printf("%s\n", fp)
 	return nil
+}
+
+func showVkey(privFile string, keyName string) error {
+	pub, err := pubkeyFromPrivFile(privFile)
+	if err != nil {
+		return err
+	}
+	var vkey string
+	switch p := pub.(type) {
+	case ed25519.PublicKey:
+		sigsumPub := sigsumcrypto.PublicKey(p)
+		nv := checkpoint.NewNoteVerifier(keyName, checkpoint.SigTypeCosignature, &sigsumPub)
+		vkey = nv.String()
+	case *mldsa.PublicKey:
+		nv := newNoteVerifierMLDSA44(keyName, sigTypeCosignatureMLDSA44, (*publicKeyMLDSA44)(p.Bytes()))
+		vkey = nv.String()
+	default:
+		return fmt.Errorf("unsupported signer type from file %q: %T", privFile, p)
+	}
+	fmt.Printf("%s\n", vkey)
+	return nil
+}
+
+func pubkeyFromPrivFile(privFile string) (crypto.PublicKey, error) {
+	data, err := os.ReadFile(privFile)
+	if err != nil {
+		return nil, err
+	}
+	signer, err := agent.ParsePrivateKeyFile(data, ui.NewTerminalGetPassphrase(privFile))
+	if err != nil {
+		return nil, fmt.Errorf("reading private key file %q failed: %w", privFile, err)
+	}
+	return signer.Public(), nil
 }
 
 func genkey(outFile string, keyType string, passphraseOpt getopt.Option) error {
