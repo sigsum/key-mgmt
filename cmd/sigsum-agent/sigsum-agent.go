@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"crypto/ed25519"
 	"crypto/mldsa"
 	"crypto/rand"
@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,10 +59,9 @@ option) and key id (-i option). The contents of the passphrase file is
 a single line with the authorization id (decimal number), and the
 corresponding passphrase, separated by a single ':' character.
 
-When using a yubihsm key, the agent needs a separate yubihsm-connector
-process to be running. By default, the connector is expected to
-listen on TCP port 12345 on localhost, but this can be changed with
-the -c option.
+When using yubihsm key(s), the agent needs a separate
+yubihsm-connector process to be running for each yubihsm key. TODO:
+document how that is configured.
 
 The agent listens for connections on a unix socket. By default, a
 random name is selected under /tmp (or ${TMPDIR}, if set), but it can
@@ -100,8 +100,6 @@ is closed after the pid file is written, and the command's stdout is
 redirected to /dev/null. If both pid and socket name are written to
 stdout, they are written as one line each, pid first.
 `
-	// Default connector url
-	connector := "localhost:12345"
 	keyId := -1
 	hsmPassFile := ""
 	keyFiles := []string{}
@@ -114,7 +112,6 @@ stdout, they are written as one line each, pid first.
 	set := getopt.New()
 	set.SetParameters("[cmd ...]")
 	set.SetUsage(func() { fmt.Print(usage) })
-	set.FlagLong(&connector, "connector", 'c', "host:port")
 	set.FlagLong(&keyId, "key-id", 'i', "yubihsm key id")
 	set.FlagLong(&hsmPassFile, "hsm-passphrase-file", 'a', "for yubihsm, file with auth-id:passphrase")
 	set.FlagLong(&keyFiles, "key-file", 'k', "Ed25519 or ML-DSA-44 private key file in OpenSSH PEM Format. Can be used several times.")
@@ -196,6 +193,7 @@ stdout, they are written as one line each, pid first.
 		defer os.Remove(socketName)
 	}
 	keys := make(map[string]agent.SSHSign)
+	nWorkers := 1
 	for _, keyFile := range keyFiles {
 		sshKey, sshSign, err := sshFromFile(keyFile, newGetPassphraseFunc)
 		if err != nil {
@@ -204,11 +202,12 @@ stdout, they are written as one line each, pid first.
 		keys[sshKey] = sshSign
 	}
 	if keyId > 0 {
-		sshKey, sshSign, cleanup, err := sshFromEd25519HSM(keyId, hsmPassFile, connector, retry)
+		sshKey, sshSign, n, cleanupHSM, err := sshFromMultiEd25519HSM(hsmPassFile, keyId, retry)
+		defer cleanupHSM()
 		if err != nil {
 			return 0, err
 		}
-		defer cleanup()
+		nWorkers = n
 		keys[sshKey] = sshSign
 	}
 	if len(keys) == 0 {
@@ -216,7 +215,7 @@ stdout, they are written as one line each, pid first.
 	}
 
 	if len(set.Args()) > 0 {
-		go runAgent(socket, keys)
+		go runAgent(socket, keys, nWorkers)
 
 		cmd := createCommand(socketName, pidFile != "-", set.Args())
 		if err := cmd.Start(); err != nil {
@@ -269,7 +268,7 @@ stdout, they are written as one line each, pid first.
 		<-ch
 		socket.Close()
 	}()
-	runAgent(socket, keys)
+	runAgent(socket, keys, nWorkers)
 	return 0, nil
 }
 
@@ -308,37 +307,61 @@ func sshFromFile(keyFile string, newGetPassphraseFunc func(string) agent.GetPass
 	}
 }
 
-func sshFromEd25519HSM(keyId int, hsmPassFile string, connector string, retry bool) (string, agent.SSHSign, func(), error) {
+func sshFromMultiEd25519HSM(hsmPassFile string, keyId int, retry bool) (string, agent.SSHSign, int, func(), error) {
 	if keyId < 0 || keyId >= 0x10000 {
-		return "", nil, nil, fmt.Errorf("key id %d out of range", keyId)
+		return "", nil, 0, nil, fmt.Errorf("key id %d out of range", keyId)
 	}
-	buf, err := os.ReadFile(hsmPassFile)
+	f, err := os.Open(hsmPassFile)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("reading file %q failed: %w", hsmPassFile, err)
+		return "", nil, 0, nil, err
 	}
-	buf = bytes.TrimSpace(buf)
-	colon := bytes.Index(buf, []byte{':'})
-	if colon < 0 {
-		return "", nil, nil, fmt.Errorf("invalid file %q, missing ':'", hsmPassFile)
-	}
-	authId, err := strconv.ParseUint(string(buf[:colon]), 10, 16)
-	if err != nil {
-		return "", nil, nil, fmt.Errorf("invalid auth id in file %q: %w", hsmPassFile, err)
-	}
-	authPassword := string(buf[colon+1:])
-	hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
-	if err != nil {
-		return "", nil, nil, fmt.Errorf("connecting to hsm failed: %w", err)
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	var n int
+	var hsmSigners []*hsm.YubiHSMSigner
+	for scanner.Scan() {
+		n++
+		line := scanner.Text()
+		// If a line is empty or a comment we move on
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+		// On each line expect three things separated by colons: port number, key id, passphrase
+		colon1 := strings.Index(line, ":")
+		colon2 := strings.Index(line[colon1+1:], ":")
+		if colon1 < 0 || colon2 < 0 {
+			return "", nil, 0, nil, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", n, hsmPassFile)
+		}
+		port := line[0:colon1]
+		authId, err := strconv.ParseUint(line[colon1+1:colon1+1+colon2], 10, 16)
+		if err != nil {
+			return "", nil, 0, nil, fmt.Errorf("Invalid auth id in file %q: %v", hsmPassFile, err)
+		}
+		authPassword := line[colon1+colon2+2:]
+		connector := "localhost:" + port
+		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
+		if err != nil {
+			return "", nil, 0, nil, fmt.Errorf("Error in openHSM when processing line %v in file %q: %v", n, hsmPassFile, err)
+		}
+		hsmSigners = append(hsmSigners, hsmSigner)
 	}
 	cleanup := func() {
-		hsmSigner.Close()
+		for i := range hsmSigners {
+			hsmSigners[i].Close()
+		}
 	}
-	sshKey, sshSign, err := agent.SSHFromEd25519(hsmSigner)
+	if err := scanner.Err(); err != nil {
+		return "", nil, 0, cleanup, err
+	}
+	multiHsmSigner, err := hsm.NewMultiYubiHSMSigner(hsmSigners)
 	if err != nil {
-		cleanup()
-		return "", nil, nil, fmt.Errorf("internal error: %w", err)
+		return "", nil, 0, cleanup, fmt.Errorf("failed NewMultiYubiHSMSigner: %w", err)
 	}
-	return sshKey, sshSign, cleanup, nil
+	sshKey, sshSign, err := agent.SSHFromEd25519(multiHsmSigner)
+	if err != nil {
+		return "", nil, 0, cleanup, fmt.Errorf("internal error: %w", err)
+	}
+	return sshKey, sshSign, n, cleanup, nil
 }
 
 // We need the connector to be up and running, to initialize and
@@ -364,14 +387,14 @@ func openHSM(connector string, authId uint16, authPassword string, keyId uint16,
 	return nil, fmt.Errorf("Connecting to HSM failed: %v", err)
 }
 
-func serveAndClose(c net.Conn, keys map[string]agent.SSHSign) {
+func serveAndClose(c net.Conn, keys map[string]agent.SSHSign, nWorkers int) {
 	defer c.Close()
-	agent.ServeAgent(c, c, keys)
+	agent.ServeAgent(c, c, keys, nWorkers)
 }
 
 // Accepts connections, and spawns a serving goroutine for each. Will
 // return when the listening socket is closed under its feet.
-func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
+func runAgent(socket net.Listener, keys map[string]agent.SSHSign, nWorkers int) {
 	for {
 		c, err := socket.Accept()
 		if err != nil {
@@ -380,7 +403,7 @@ func runAgent(socket net.Listener, keys map[string]agent.SSHSign) {
 			// good way to check for that.
 			return
 		}
-		go serveAndClose(c, keys)
+		go serveAndClose(c, keys, nWorkers)
 	}
 }
 
