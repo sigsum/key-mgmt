@@ -8,6 +8,7 @@ require (
 	github.com/pborman/getopt/v2 v2.1.0
 	golang.org/x/crypto v0.53.0
 	golang.org/x/term v0.45.0
+	sigsum.org/sigsum-go v0.14.1
 )
 
 require (
