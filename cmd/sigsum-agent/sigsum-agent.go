@@ -203,7 +203,11 @@ stdout, they are written as one line each, pid first.
 	}
 	if keyId > 0 {
 		sshKey, sshSign, n, cleanupHSM, err := sshFromMultiEd25519HSM(hsmPassFile, keyId, retry)
-		defer cleanupHSM()
+		defer func() {
+			if cleanupHSM != nil {
+				cleanupHSM()
+			}
+		}()
 		if err != nil {
 			return 0, err
 		}
