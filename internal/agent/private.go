@@ -207,57 +207,7 @@ func readPrivateKeyInner(r io.Reader, publicKeyBlob []byte) (crypto.Signer, erro
 	}
 }
 
-type privateKeyData struct {
-	cipherName    string
-	kdfName       string
-	kdfOptsBlob   []byte
-	publicKeyBlob []byte
-	privBlob      []byte
-}
-
-func readPrivateKeyData(r io.Reader) (*privateKeyData, error) {
-	if err := readSkip(r, opensshPrivateKeyMagic); err != nil {
-		return nil, err
-	}
-	cipherName, err := readString(r, privateKeyReadMaxSize)
-	if err != nil {
-		return nil, fmt.Errorf("reading ciphername: %w", err)
-	}
-	kdfName, err := readString(r, privateKeyReadMaxSize)
-	if err != nil {
-		return nil, fmt.Errorf("reading kdfname: %w", err)
-	}
-	kdfOptsBlob, err := readString(r, privateKeyReadMaxSize)
-	if err != nil {
-		return nil, fmt.Errorf("reading kdfoptions: %w", err)
-	}
-	if err = readSkip(r, serializeUint32(1)); err != nil {
-		return nil, fmt.Errorf("only 1 single key is supported: %w", err)
-	}
-	publicKeyBlob, err := readString(r, privateKeyReadMaxSize)
-	if err != nil {
-		return nil, fmt.Errorf("reading pubkey: %w", err)
-	}
-	privBlob, err := readString(r, privateKeyReadMaxSize)
-	if err != nil {
-		return nil, fmt.Errorf("invalid private key: %v", err)
-	}
-	return &privateKeyData{
-		cipherName:    string(cipherName),
-		kdfName:       string(kdfName),
-		kdfOptsBlob:   kdfOptsBlob,
-		publicKeyBlob: publicKeyBlob,
-		privBlob:      privBlob,
-	}, nil
-}
-
-// Reads a binary private key file, i.e., after PEM decapsulation.
-func readPrivateKey(r io.Reader, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
-	data, err := readPrivateKeyData(r)
-	if err != nil {
-		return nil, err
-	}
-
+func readPrivateKey(data *privateKeyData, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
 	var decryptor decryptFunc
 	switch data.cipherName {
 	case "none":
@@ -302,11 +252,15 @@ func readPrivateKey(r io.Reader, getPassphrase GetPassphraseFunc) (crypto.Signer
 		})
 }
 
-// Reads an ASCII format private key of the supported types (Ed25519
-// or ML-DSA-44). Supports only the case of a single key per file. The
-// format is OpenSSH PEM, and the contained private key may be plain
-// or encrypted.
-func ParsePrivateKeyFile(ascii []byte, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
+type privateKeyData struct {
+	cipherName    string
+	kdfName       string
+	kdfOptsBlob   []byte
+	publicKeyBlob []byte
+	privBlob      []byte
+}
+
+func parsePrivateKeyFile(ascii []byte) (*privateKeyData, error) {
 	block, _ := pem.Decode(ascii)
 	if block == nil {
 		return nil, ErrNotPEM
@@ -314,14 +268,56 @@ func ParsePrivateKeyFile(ascii []byte, getPassphrase GetPassphraseFunc) (crypto.
 	if block.Type != pemPrivateKeyTag {
 		return nil, fmt.Errorf("unexpected PEM tag: %q", block.Type)
 	}
-	signer, err := parseBytes(block.Bytes, nil,
-		func(r io.Reader) (crypto.Signer, error) {
-			return readPrivateKey(r, getPassphrase)
-		})
+	return parseBytes(block.Bytes, nil, func(r io.Reader) (*privateKeyData, error) {
+		if err := readSkip(r, opensshPrivateKeyMagic); err != nil {
+			return nil, err
+		}
+		cipherName, err := readString(r, privateKeyReadMaxSize)
+		if err != nil {
+			return nil, fmt.Errorf("reading ciphername: %w", err)
+		}
+		kdfName, err := readString(r, privateKeyReadMaxSize)
+		if err != nil {
+			return nil, fmt.Errorf("reading kdfname: %w", err)
+		}
+		kdfOptsBlob, err := readString(r, privateKeyReadMaxSize)
+		if err != nil {
+			return nil, fmt.Errorf("reading kdfoptions: %w", err)
+		}
+		if err = readSkip(r, serializeUint32(1)); err != nil {
+			return nil, fmt.Errorf("only 1 single key is supported: %w", err)
+		}
+		publicKeyBlob, err := readString(r, privateKeyReadMaxSize)
+		if err != nil {
+			return nil, fmt.Errorf("reading pubkey: %w", err)
+		}
+		privBlob, err := readString(r, privateKeyReadMaxSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid private key: %v", err)
+		}
+		return &privateKeyData{
+			cipherName:    string(cipherName),
+			kdfName:       string(kdfName),
+			kdfOptsBlob:   kdfOptsBlob,
+			publicKeyBlob: publicKeyBlob,
+			privBlob:      privBlob,
+		}, nil
+	})
+}
+
+// Reads an ASCII format private key of the supported types (Ed25519
+// or ML-DSA-44). Supports only the case of a single key per file. The
+// format is OpenSSH PEM, and the contained private key may be plain
+// or encrypted.
+func ParsePrivateKeyFile(ascii []byte, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
+	data, err := parsePrivateKeyFile(ascii)
 	if err != nil {
 		return nil, fmt.Errorf("parsing private key: %w", err)
 	}
-
+	signer, err := readPrivateKey(data, getPassphrase)
+	if err != nil {
+		return nil, fmt.Errorf("reading private key: %w", err)
+	}
 	return signer, nil
 }
 
@@ -329,33 +325,24 @@ func ParsePrivateKeyFile(ascii []byte, getPassphrase GetPassphraseFunc) (crypto.
 // manner similar to ParsePrivateKeyFile. It returns the public key
 // without needing to decrypt the private blob.
 func ParsePublicFromPrivateKeyFile(ascii []byte) (crypto.PublicKey, error) {
-	block, _ := pem.Decode(ascii)
-	if block == nil {
-		return nil, ErrNotPEM
+	data, err := parsePrivateKeyFile(ascii)
+	if err != nil {
+		return nil, fmt.Errorf("parsing private key: %w", err)
 	}
-	if block.Type != pemPrivateKeyTag {
-		return nil, fmt.Errorf("unexpected PEM tag: %q", block.Type)
+	pubData, err := parseBytes(data.publicKeyBlob, nil, readPubBlob)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key, pubkey invalid: %w", err)
 	}
-	return parseBytes(block.Bytes, nil, func(r io.Reader) (crypto.PublicKey, error) {
-		data, err := readPrivateKeyData(r)
+	switch pubData.algName {
+	case AlgEd25519:
+		return ed25519.PublicKey(pubData.pubKey), nil
+	case AlgMLDSA44:
+		pub, err := mldsa.NewPublicKey(mldsa.MLDSA44(), pubData.pubKey)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create public key: %w", err)
 		}
-		pubData, err := parseBytes(data.publicKeyBlob, nil, readPubBlob)
-		if err != nil {
-			return nil, fmt.Errorf("invalid private key, pubkey invalid: %w", err)
-		}
-		switch pubData.algName {
-		case AlgEd25519:
-			return ed25519.PublicKey(pubData.pubKey), nil
-		case AlgMLDSA44:
-			pub, err := mldsa.NewPublicKey(mldsa.MLDSA44(), pubData.pubKey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create public key: %w", err)
-			}
-			return pub, nil
-		default:
-			return nil, fmt.Errorf("unsupported key algorithm: %s", pubData.algName)
-		}
-	})
+		return pub, nil
+	default:
+		return nil, fmt.Errorf("unsupported key algorithm: %s", pubData.algName)
+	}
 }
