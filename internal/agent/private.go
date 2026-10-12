@@ -139,7 +139,7 @@ func readPubBlob(r io.Reader) (*pubData, error) {
 		return nil, fmt.Errorf("reading algname: %w", err)
 	}
 	p.algName = string(algName)
-	p.pubSize, p.privSize, err = getKeySizes(string(p.algName))
+	p.pubSize, p.privSize, err = getKeySizes(p.algName)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +154,7 @@ func readPubBlob(r io.Reader) (*pubData, error) {
 }
 
 // Reads the inner private key data, i.e., the section that is
-// potentially encrypted (although we handle only unencrypted key
-// files).
+// potentially encrypted.
 func readPrivateKeyInner(r io.Reader, publicKeyBlob []byte) (crypto.Signer, error) {
 	pubData, err := parseBytes(publicKeyBlob, nil, readPubBlob)
 	if err != nil {
@@ -208,14 +207,18 @@ func readPrivateKeyInner(r io.Reader, publicKeyBlob []byte) (crypto.Signer, erro
 	}
 }
 
-// Reads a binary private key file, i.e., after PEM decapsulation.
-func readPrivateKey(r io.Reader, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
+type privateKeyData struct {
+	cipherName    string
+	kdfName       string
+	kdfOptsBlob   []byte
+	publicKeyBlob []byte
+	privBlob      []byte
+}
+
+func readPrivateKeyData(r io.Reader) (*privateKeyData, error) {
 	if err := readSkip(r, opensshPrivateKeyMagic); err != nil {
 		return nil, err
 	}
-
-	var decryptor decryptFunc
-
 	cipherName, err := readString(r, privateKeyReadMaxSize)
 	if err != nil {
 		return nil, fmt.Errorf("reading ciphername: %w", err)
@@ -228,21 +231,48 @@ func readPrivateKey(r io.Reader, getPassphrase GetPassphraseFunc) (crypto.Signer
 	if err != nil {
 		return nil, fmt.Errorf("reading kdfoptions: %w", err)
 	}
+	if err = readSkip(r, serializeUint32(1)); err != nil {
+		return nil, fmt.Errorf("only 1 single key is supported: %w", err)
+	}
+	publicKeyBlob, err := readString(r, privateKeyReadMaxSize)
+	if err != nil {
+		return nil, fmt.Errorf("reading pubkey: %w", err)
+	}
+	privBlob, err := readString(r, privateKeyReadMaxSize)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key: %v", err)
+	}
+	return &privateKeyData{
+		cipherName:    string(cipherName),
+		kdfName:       string(kdfName),
+		kdfOptsBlob:   kdfOptsBlob,
+		publicKeyBlob: publicKeyBlob,
+		privBlob:      privBlob,
+	}, nil
+}
 
-	switch string(cipherName) {
+// Reads a binary private key file, i.e., after PEM decapsulation.
+func readPrivateKey(r io.Reader, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
+	data, err := readPrivateKeyData(r)
+	if err != nil {
+		return nil, err
+	}
+
+	var decryptor decryptFunc
+	switch data.cipherName {
 	case "none":
-		if string(kdfName) != "none" {
-			return nil, fmt.Errorf("cipher is %s but kdf not none: %s", cipherName, kdfName)
+		if data.kdfName != "none" {
+			return nil, fmt.Errorf("cipher is %s but kdf not none: %s", data.cipherName, data.kdfName)
 		}
-		if len(kdfOptsBlob) > 0 {
-			return nil, fmt.Errorf("cipher is %s but kdfoptions is not empty", cipherName)
+		if len(data.kdfOptsBlob) > 0 {
+			return nil, fmt.Errorf("cipher is %s but kdfoptions is not empty", data.cipherName)
 		}
 		decryptor = noneDecryptor
 	case "aes256-ctr":
-		if string(kdfName) != "bcrypt" {
-			return nil, fmt.Errorf("cipher is %s, unsupported kdf: %s", cipherName, kdfName)
+		if data.kdfName != "bcrypt" {
+			return nil, fmt.Errorf("cipher is %s, unsupported kdf: %s", data.cipherName, data.kdfName)
 		}
-		kdfOpts, err := parseBytes(kdfOptsBlob, nil, readKDFOptions)
+		kdfOpts, err := parseBytes(data.kdfOptsBlob, nil, readKDFOptions)
 		if err != nil {
 			return nil, fmt.Errorf("parsing kdfoptions: %w", err)
 		}
@@ -258,30 +288,17 @@ func readPrivateKey(r io.Reader, getPassphrase GetPassphraseFunc) (crypto.Signer
 		}
 		decryptor = newAes256ctrDecryptor(passphrase, kdfOpts)
 	default:
-		return nil, fmt.Errorf("unsupported cipher: %s", cipherName)
+		return nil, fmt.Errorf("unsupported cipher: %s", data.cipherName)
 	}
 
-	if err := readSkip(r, serializeUint32(1)); err != nil {
-		return nil, fmt.Errorf("only 1 single key is supported: %w", err)
-	}
-
-	publicKeyBlob, err := readString(r, privateKeyReadMaxSize)
-	if err != nil {
-		return nil, fmt.Errorf("reading pubkey: %w", err)
-	}
-	privBlob, err := readString(r, privateKeyReadMaxSize)
-	if err != nil {
-		return nil, fmt.Errorf("invalid private key: %v", err)
-	}
-
-	decrypted, err := decryptor(privBlob)
+	decrypted, err := decryptor(data.privBlob)
 	if err != nil {
 		return nil, fmt.Errorf("failed decrypt: %w", err)
 	}
 
 	return parseBytes(decrypted, opensshPrivateKeyPadding,
 		func(r io.Reader) (crypto.Signer, error) {
-			return readPrivateKeyInner(r, publicKeyBlob)
+			return readPrivateKeyInner(r, data.publicKeyBlob)
 		})
 }
 
@@ -306,4 +323,39 @@ func ParsePrivateKeyFile(ascii []byte, getPassphrase GetPassphraseFunc) (crypto.
 	}
 
 	return signer, nil
+}
+
+// ParsePublicFromPrivateKeyFile reads a ASCII format private key in a
+// manner similar to ParsePrivateKeyFile. It returns the public key
+// without needing to decrypt the private blob.
+func ParsePublicFromPrivateKeyFile(ascii []byte) (crypto.PublicKey, error) {
+	block, _ := pem.Decode(ascii)
+	if block == nil {
+		return nil, ErrNotPEM
+	}
+	if block.Type != pemPrivateKeyTag {
+		return nil, fmt.Errorf("unexpected PEM tag: %q", block.Type)
+	}
+	return parseBytes(block.Bytes, nil, func(r io.Reader) (crypto.PublicKey, error) {
+		data, err := readPrivateKeyData(r)
+		if err != nil {
+			return nil, err
+		}
+		pubData, err := parseBytes(data.publicKeyBlob, nil, readPubBlob)
+		if err != nil {
+			return nil, fmt.Errorf("invalid private key, pubkey invalid: %w", err)
+		}
+		switch pubData.algName {
+		case AlgEd25519:
+			return ed25519.PublicKey(pubData.pubKey), nil
+		case AlgMLDSA44:
+			pub, err := mldsa.NewPublicKey(mldsa.MLDSA44(), pubData.pubKey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create public key: %w", err)
+			}
+			return pub, nil
+		default:
+			return nil, fmt.Errorf("unsupported key algorithm: %s", pubData.algName)
+		}
+	})
 }

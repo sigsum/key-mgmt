@@ -26,24 +26,25 @@ cmp tmp.key.pub.genkey tmp.key.pub.sshkeygen
 ssh-keygen -q -t ed25519 -N "$pass" -f tmp.key2
 sshfp=$(ssh-keygen -l -f tmp.key2 | grep -o "SHA256:\S\+")
 [ -n "$sshfp" ]
-# Get the pubkey fingerprint using our genkey, requiring decryption of
-# the privkey. Using script(1) to get passphrase "typed" on a tty.
-printf "%s\n" "$pass" | script -c "go run ../cmd/genkey-mldsa44 -l tmp.key2" tmp.scriptout >/dev/null
-# Lines apparently end with \r\n
-grep -q "^$sshfp.$" tmp.scriptout
+# Check decrypting using sigsum-agent. Using script(1) to "type"
+# passphrase on a tty.
+printf "%s\n" "$pass" | script -c "go run ../cmd/sigsum-agent -k tmp.key2 ssh-add -l" tmp.scriptout >/dev/null
+grep -q "\b$sshfp\b" tmp.scriptout
 
 # Check decrypting using key passfile (only). Towards the above
 # Ed25519 key, because using ssh-add
 printf "\n# test comment\ntmp.key2:%s\n" "$pass" >tmp.passfile
 go run ../cmd/sigsum-agent -p tmp.passfile -k tmp.key2 ssh-add -l 2>&1 | grep -q "\b$sshfp\b"
 
-# Check that our genkey can encrypt and decrypt our ML-DSA-44
+# Check that ML-DSA-44 can be decrypted using sigsum-agent
 sshfp=$(go run ../cmd/genkey-mldsa44 -o tmp.key3 -N "$pass")
-[ -n "$sshfp" ]
-printf "%s\n" "$pass" | script -c "go run ../cmd/genkey-mldsa44 -l tmp.key3" tmp.scriptout2 >/dev/null
-grep -q "^$sshfp.$" tmp.scriptout2
+printf "tmp.key3:%s\n" "$pass" >tmp.passfile
+go run ../cmd/sigsum-agent -p tmp.passfile -k tmp.key3 true
+# Check getting FP privkey without needing to decrypt
+go run ../cmd/genkey-mldsa44 -l tmp.key3 | grep -q "^$sshfp$"
 
 # Check also without encryption
 sshfp=$(go run ../cmd/genkey-mldsa44 -o tmp.key4 -N "")
+go run ../cmd/sigsum-agent -k tmp.key4 true
 [ -n "$sshfp" ]
 go run ../cmd/genkey-mldsa44 -l tmp.key4 | grep -q "^$sshfp$"

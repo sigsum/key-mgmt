@@ -36,6 +36,10 @@ before writing it. If an empty passphrase is entered the private key
 will not be encrypted.
 
 ` + groupOLE + `: options -o, -l, and -e are mutually exclusive
+
+Note that options -l and -e does read from an SSH private key file,
+but no passphrase is needed for these operations. The file always
+contains the public key in plain, non-encrypted, format.
 `
 	)
 	showHelp := false
@@ -144,11 +148,11 @@ func pubkeyFromPrivFile(privFile string) (crypto.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	signer, err := agent.ParsePrivateKeyFile(data, ui.NewTerminalGetPassphrase(privFile))
+	pub, err := agent.ParsePublicFromPrivateKeyFile(data)
 	if err != nil {
 		return nil, fmt.Errorf("reading private key file %q failed: %w", privFile, err)
 	}
-	return signer.Public(), nil
+	return pub, nil
 }
 
 func genkey(outFile string, keyType string, passphraseOpt getopt.Option) error {
