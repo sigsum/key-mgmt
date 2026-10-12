@@ -552,6 +552,29 @@ c3iadVehK+RnYRTUAPV0Wc5cwFRPuBYCo4EsqH3sKFvc1jUAAAAAAQIDBA==
 	}
 }
 
+func TestPrivateKeyParsePublicWithoutDecrypting(t *testing.T) {
+	knownPriv, err := mldsa.GenerateKey(mldsa.MLDSA44())
+	if err != nil {
+		t.Fatalf("failed mldsa.GenerateKey: %v", err)
+	}
+	knownPub := knownPriv.Public().(*mldsa.PublicKey)
+
+	var buf bytes.Buffer
+	err = WritePrivateKeyFile(&buf, NewPassphraseEncryptor(genPass()), AlgMLDSA44, knownPub.Bytes(), knownPriv.Bytes())
+	if err != nil {
+		t.Fatalf("failed writePrivateKeyFile: %v", err)
+	}
+
+	pub, err := ParsePublicFromPrivateKeyFile(buf.Bytes())
+	if err != nil {
+		t.Errorf("failed ParsePublicFromPrivateKeyFile: %v", err)
+	}
+
+	if !knownPub.Equal(pub) {
+		t.Errorf("unexpected publickey %x, wanted %x", pub, knownPub)
+	}
+}
+
 func genPass() string {
 	b := make([]byte, 20)
 	rand.Read(b)
