@@ -321,10 +321,10 @@ func sshFromMultiEd25519HSM(hsmPassFile string, keyId int, retry bool) (string, 
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
-	var n int
 	var hsmSigners []*hsm.YubiHSMSigner
+	var lineno int
 	for scanner.Scan() {
-		n++
+		lineno++
 		line := scanner.Text()
 		// If a line is empty or a comment we move on
 		if len(line) == 0 || line[0] == '#' {
@@ -334,7 +334,7 @@ func sshFromMultiEd25519HSM(hsmPassFile string, keyId int, retry bool) (string, 
 		colon1 := strings.Index(line, ":")
 		colon2 := strings.Index(line[colon1+1:], ":")
 		if colon1 < 0 || colon2 < 0 {
-			return "", nil, 0, nil, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", n, hsmPassFile)
+			return "", nil, 0, nil, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", lineno, hsmPassFile)
 		}
 		port := line[0:colon1]
 		authId, err := strconv.ParseUint(line[colon1+1:colon1+1+colon2], 10, 16)
@@ -345,7 +345,7 @@ func sshFromMultiEd25519HSM(hsmPassFile string, keyId int, retry bool) (string, 
 		connector := "localhost:" + port
 		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
 		if err != nil {
-			return "", nil, 0, nil, fmt.Errorf("Error in openHSM when processing line %v in file %q: %v", n, hsmPassFile, err)
+			return "", nil, 0, nil, fmt.Errorf("Error in openHSM when processing line %v in file %q: %v", lineno, hsmPassFile, err)
 		}
 		hsmSigners = append(hsmSigners, hsmSigner)
 	}
@@ -365,7 +365,7 @@ func sshFromMultiEd25519HSM(hsmPassFile string, keyId int, retry bool) (string, 
 	if err != nil {
 		return "", nil, 0, cleanup, fmt.Errorf("internal error: %w", err)
 	}
-	return sshKey, sshSign, n, cleanup, nil
+	return sshKey, sshSign, len(hsmSigners), cleanup, nil
 }
 
 // We need the connector to be up and running, to initialize and
