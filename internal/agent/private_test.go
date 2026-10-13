@@ -16,6 +16,7 @@ import (
 )
 
 func TestPrivateKeyEd25519Read(t *testing.T) {
+	t.Parallel()
 	// Generated with ssh-keygen -q -N '' -t ed25519 -f test.key
 	testPriv := []byte(
 		`-----BEGIN OPENSSH PRIVATE KEY-----
@@ -48,6 +49,7 @@ gX4rCMeNlFXpDyZqodB4AAAADm5pc3NlQGJseWdsYW5zAQIDBAUGBw==
 }
 
 func TestPrivateKeyEd25519ReadEncryptedBySshkeygen(t *testing.T) {
+	t.Parallel()
 	// Generated with ssh-keygen -q -N toomanysecrets -t ed25519 -f testencr.key
 	testPass := "toomanysecrets"
 	testPriv := []byte(
@@ -82,6 +84,7 @@ rtJMNs5oXL8EfQGw==
 }
 
 func TestPrivateKeyEd25519ReadEncrypted(t *testing.T) {
+	t.Parallel()
 	knownPub, knownPriv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatalf("failed GenerateKey: %v", err)
@@ -114,6 +117,7 @@ func TestPrivateKeyEd25519ReadEncrypted(t *testing.T) {
 }
 
 func TestPrivateKeyEd25519Write(t *testing.T) {
+	t.Parallel()
 	fixedNonce := [4]byte{'0', '1', '2', '3'}
 	fixedSeed := [ed25519.SeedSize]byte{0xde, 0xad, 0xbe, 0xef} // rest zeroes
 	fixedPriv := ed25519.NewKeyFromSeed(fixedSeed[:])
@@ -153,6 +157,7 @@ AMY9liI/ehlhqkSxjXNHg1AXH30UH802SQBj7V1aS6vWAAAAAAECAwQF
 }
 
 func TestPrivateKeyEd25519WriteEncrypted(t *testing.T) {
+	t.Parallel()
 	knownPub, knownPriv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatalf("failed GenerateKey: %v", err)
@@ -186,6 +191,7 @@ func TestPrivateKeyEd25519WriteEncrypted(t *testing.T) {
 }
 
 func TestPrivateKeyMLDSA44Read(t *testing.T) {
+	t.Parallel()
 	testPriv := []byte(
 		`-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAFNAAAAAxz
@@ -298,6 +304,7 @@ Zz6E8zcKJDqOCxkMsVG75MFpInsyRCgVrBaZTXi+pOjaYToAAAAAAQIDBA==
 }
 
 func TestPrivateKeyMLDSA44ReadWriteEncrypted(t *testing.T) {
+	t.Parallel()
 	fixedNonce := [4]byte{'0', '1', '2', '3'}
 	fixedSeed := [mldsa.PrivateKeySize]byte{0xde, 0xad, 0xbe, 0xef} // rest zeroes
 	fixedPriv, err := mldsa.NewPrivateKey(mldsa.MLDSA44(), fixedSeed[:])
@@ -432,6 +439,7 @@ CvG3rF9nyd8QJOWQGKeZ+rBRz6BOepQIhSY0RUEewEN+ZTNxGW+8dfFEV8ip1yRp
 }
 
 func TestPrivateKeyMLDSA44Write(t *testing.T) {
+	t.Parallel()
 	fixedNonce := [4]byte{'0', '1', '2', '3'}
 	fixedSeed := [mldsa.PrivateKeySize]byte{0xde, 0xad, 0xbe, 0xef} // rest zeroes
 	fixedPriv, err := mldsa.NewPrivateKey(mldsa.MLDSA44(), fixedSeed[:])
@@ -553,6 +561,7 @@ c3iadVehK+RnYRTUAPV0Wc5cwFRPuBYCo4EsqH3sKFvc1jUAAAAAAQIDBA==
 }
 
 func TestPrivateKeyParsePublicWithoutDecrypting(t *testing.T) {
+	t.Parallel()
 	knownPriv, err := mldsa.GenerateKey(mldsa.MLDSA44())
 	if err != nil {
 		t.Fatalf("failed mldsa.GenerateKey: %v", err)
