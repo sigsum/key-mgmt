@@ -30,4 +30,4 @@ gofmt:
   before_script:
     - apt-get update
     - apt-get install -y grep
-  script: if gofmt -d . | grep . ; then false ; else true ; fi ; echo test-aaa | grep aaa ; echo test-bbb | grep bbb ; echo $0
+  script: gofmt -d . | grep -v .
