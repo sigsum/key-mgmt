@@ -30,4 +30,4 @@ gofmt:
   before_script:
     - apt-get update
     - apt-get install -y grep
-  script: gofmt -d . | grep -v .
+  script: gofmt -d . ; gofmt -d . | grep -v .
