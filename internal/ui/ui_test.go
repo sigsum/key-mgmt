@@ -6,6 +6,7 @@ import (
 )
 
 func TestParseKeyPassFile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		testName    string
 		input       string
@@ -72,8 +73,8 @@ func TestParseKeyPassFile(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.testName, func(t *testing.T) {
+			t.Parallel()
 			passes, err := parseKeyPassFile(strings.NewReader(test.input))
-
 			if err != nil {
 				if test.expErr == "" {
 					t.Errorf("got parse err %q, wanted no err", err)

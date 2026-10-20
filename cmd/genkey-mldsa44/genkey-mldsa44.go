@@ -7,6 +7,7 @@ import (
 	"crypto/mldsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -35,11 +36,14 @@ The program asks for a passphrase for encrypting the private key
 before writing it. If an empty passphrase is entered the private key
 will not be encrypted.
 
-` + groupOLE + `: options -o, -l, and -e are mutually exclusive
+The options -l and -e can read both the SSH private key (PEM), and SSH
+public key formats. Reading as private key is attempted first. Since
+this always contains the public key in plain, non-enrypted, format, no
+passphrase will be needed. If the file is not PEM-encoded, it is read
+as an SSH public key, with support for one single public key (one
+line).
 
-Note that options -l and -e does read from an SSH private key file,
-but no passphrase is needed for these operations. The file always
-contains the public key in plain, non-encrypted, format.
+` + groupOLE + `: options -o, -l, and -e are mutually exclusive
 `
 	)
 	showHelp := false
@@ -56,9 +60,9 @@ contains the public key in plain, non-encrypted, format.
 		SetGroup(groupOLE)
 	set.FlagLong(&passphrase, "passphrase", 'N', "Set passphrase for encryption, empty string for no encryption", "string")
 	set.Flag(&keyType, 't', "Set type of key to generate, mldsa44 or ed25519", "keytype")
-	set.FlagLong(&showFPFile, "show", 'l', "Show SSH public key fingerprint from private key in file", "filename").
+	set.FlagLong(&showFPFile, "show", 'l', "Show SSH fingerprint of a public key from an SSH public or private key file", "filename").
 		SetGroup(groupOLE)
-	set.Flag(&showVkeyFile, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of public key from private key in file. Requires -n.", "filename").
+	set.Flag(&showVkeyFile, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of a public key from an SSH public or private key file", "filename").
 		SetGroup(groupOLE)
 	set.Flag(&vkeyName, 'n', "Set key name for vkey. Required for -e.", "keyname")
 	set.SetParameters("")
@@ -104,8 +108,8 @@ contains the public key in plain, non-encrypted, format.
 	}
 }
 
-func showFP(privFile string) error {
-	pub, err := pubkeyFromPrivFile(privFile)
+func showFP(fileName string) error {
+	pub, err := pubkeyFromFile(fileName)
 	if err != nil {
 		return err
 	}
@@ -116,14 +120,14 @@ func showFP(privFile string) error {
 	case *mldsa.PublicKey:
 		fp = fingerprint(agent.AlgMLDSA44, p.Bytes())
 	default:
-		return fmt.Errorf("unsupported signer type from file %q: %T", privFile, p)
+		return fmt.Errorf("unsupported signer type from file %q: %T", fileName, p)
 	}
 	fmt.Printf("%s\n", fp)
 	return nil
 }
 
-func showVkey(privFile string, keyName string) error {
-	pub, err := pubkeyFromPrivFile(privFile)
+func showVkey(fileName string, keyName string) error {
+	pub, err := pubkeyFromFile(fileName)
 	if err != nil {
 		return err
 	}
@@ -137,20 +141,26 @@ func showVkey(privFile string, keyName string) error {
 		nv := newNoteVerifierMLDSA44(keyName, sigTypeCosignatureMLDSA44, (*publicKeyMLDSA44)(p.Bytes()))
 		vkey = nv.String()
 	default:
-		return fmt.Errorf("unsupported signer type from file %q: %T", privFile, p)
+		return fmt.Errorf("unsupported signer type from file %q: %T", fileName, p)
 	}
 	fmt.Printf("%s\n", vkey)
 	return nil
 }
 
-func pubkeyFromPrivFile(privFile string) (crypto.PublicKey, error) {
-	data, err := os.ReadFile(privFile)
+func pubkeyFromFile(fileName string) (crypto.PublicKey, error) {
+	data, err := os.ReadFile(fileName)
 	if err != nil {
 		return nil, err
 	}
 	pub, err := agent.ParsePublicFromPrivateKeyFile(data)
 	if err != nil {
-		return nil, fmt.Errorf("reading private key file %q failed: %w", privFile, err)
+		if !errors.Is(err, agent.ErrNotPEM) {
+			return nil, fmt.Errorf("reading private key file %q failed: %w", fileName, err)
+		}
+		pub, err = agent.ParsePublicKeyFile(data)
+		if err != nil {
+			return nil, fmt.Errorf("reading public key file %q failed: %w", fileName, err)
+		}
 	}
 	return pub, nil
 }
