@@ -74,18 +74,7 @@ func ParsePublicFromPrivateKeyFile(ascii []byte) (crypto.PublicKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid private key, pubkey invalid: %w", err)
 	}
-	switch pubData.algName {
-	case AlgEd25519:
-		return ed25519.PublicKey(pubData.pubKey), nil
-	case AlgMLDSA44:
-		pub, err := mldsa.NewPublicKey(mldsa.MLDSA44(), pubData.pubKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create public key: %w", err)
-		}
-		return pub, nil
-	default:
-		return nil, fmt.Errorf("unsupported key algorithm: %s", pubData.algName)
-	}
+	return publicKeyFromBytes(pubData.algName, pubData.pubKey)
 }
 
 // WritePrivateKeyFile writes a private key in OpenSSH PEM format. If
