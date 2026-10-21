@@ -1,0 +1,35 @@
+#! /bin/sh
+
+set -e
+
+cd "$(dirname "$0")"
+
+rm -f tmp.*
+
+# Check that seed is read from stdin and is used. And also works
+# together with typing new passphrase on terminal
+printf 'secret\nsecret\n' \
+  | script -c 'printf "0000000000000000000000000000000000000000000000000000000000000004" | basenc -d --base16 | go run ../cmd/genkey-mldsa44 --seed - -o tmp.key' tmp.scriptout >/dev/null
+fp=$(go run ../cmd/genkey-mldsa44 -l tmp.key.pub)
+[ "$fp" = "SHA256:djlRICDM04seN4NY2QmHJ+2/sIpUNd6C4RKjE2L8YVc" ]
+
+go run ../cmd/genkey-mldsa44 -N "" -o tmp.key3 >/dev/null
+fp=$(go run ../cmd/genkey-mldsa44 -l tmp.key3.pub)
+[ -n "$fp" ]
+[ "$fp" != "SHA256:djlRICDM04seN4NY2QmHJ+2/sIpUNd6C4RKjE2L8YVc" ]
+
+# Check that seed source with 31 or 33 bytes fails
+set +e
+stderr=$(printf "_________1_________2_________3_" | go run ../cmd/genkey-mldsa44 -S - -N "" -o tmp.keyfoo 2>&1 >/dev/null)
+[ $? -ne 0 ]
+case "$stderr" in
+  *"expected 32"*) ;;
+  *) exit 1;;
+esac
+stderr=$(printf "_________1_________2_________3___" | go run ../cmd/genkey-mldsa44 -S - -N "" -o tmp.keyfoo 2>&1 >/dev/null)
+[ $? -ne 0 ]
+case "$stderr" in
+  *"expected 32"*) ;;
+  *) exit 1;;
+esac
+set -e

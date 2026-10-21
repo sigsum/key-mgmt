@@ -15,3 +15,4 @@ check:
 	./tests/inetd-test
 	./tests/signverify-mldsa-test
 	./tests/privkey-encryption-test
+	./tests/genkey-seed-test
