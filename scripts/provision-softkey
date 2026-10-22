@@ -1,0 +1,67 @@
+#!/bin/bash
+
+set -eu
+
+target="${1?Give me target host that we can ssh to}"
+# TODO we can have a final generic location, or configurable?
+keyf=/tmp/mldsa.key
+# TODO can we store this in EFI var already, configurable name? but
+# the need to be root? This also needs to be read out further down.
+pass1f=/dev/shm/pass1
+
+key2f=/dev/shm/mldsa-pass2.key
+pass2f=/dev/shm/pass2
+
+printf "Local TKey will be used to generated entropy.\n"
+printf "After running this script, the generated key and passphrases will be stored as follows:\n"
+printf "privkey(passphrase1) on %s in %s\n" "$target" "$keyf"
+printf "         passphrase1 on %s in %s\n" "$target" "$pass1f"
+printf "privkey(passphrase2) on localhost in %s\n" "$key2f"
+printf "         passphrase2 on localhost in %s\n" "$pass2f"
+printf "Hit RETURN to continue\n"
+read
+saylocal() {
+  printf "\e[36mlocal: %s\e[0m\n" "$1"
+}
+saytarget() {
+  printf "\e[33m%s: %s\e[0m\n" "$target" "$1"
+}
+
+printf "Building ...\n"
+go build -o . ./cmd/genkey-mldsa44
+printf "Copying tools to %s ...\n" "$target"
+scp -qp genkey-mldsa44 "$target":
+
+errf=/dev/shm/provision-stderr
+
+saylocal "using TKey to generate passphrase1 (32 hexdigits)"
+if ! pass1=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>"$errf"); then
+  cat "$errf" >/dev/stderr
+  exit 1
+fi
+printf "%s" "$pass1" \
+  | ssh "$target" "cat >$pass1f"
+saytarget "stored passphrase1 in: $pass1f"
+
+saylocal "using TKey to generate private key seed (16 bytes)"
+if ! seed=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>"$errf"); then
+  cat "$errf" >/dev/stderr
+  exit 1
+fi
+saytarget "creating key encrypted with passphrase1"
+printf "%s" "$seed" \
+  | basenc --base16 -d \
+  | ssh "$target" ./genkey-mldsa44 -t mldsa44 --seed - --mix -N '$(' cat "$pass1f" ')' -o "$keyf"
+saytarget "stored key (passphrase1) in: $keyf"
+
+saylocal "using TKey to generate passphrase2 (32 hexdigits)"
+if ! pass2=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>"$errf"); then
+  cat "$errf" >/dev/stderr
+  exit 1
+fi
+saytarget "re-encrypting private key with passphrase2"
+# Quoting the process and command substitution, so they are run on target
+ssh "$target" ./genkey-mldsa44 --reencrypt -p '<(' printf "$keyf:%s" '$(' cat "$pass1f" ')' ')' -N "$pass2" "$keyf" >"$key2f"
+saylocal "stored key (passphrase2) in: $key2f"
+printf "%s" "$pass2" >"$pass2f"
+saylocal "stored passphrase2 in: $pass2f"
