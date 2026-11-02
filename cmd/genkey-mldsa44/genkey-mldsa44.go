@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -36,6 +37,21 @@ The program asks for a passphrase for encrypting the private key
 before writing it. If an empty passphrase is entered the private key
 will not be encrypted.
 
+The -S (--seed) option expects the file to contains raw bytes. If your
+random number source has hex-encoded bytes, you need to convert them,
+like:
+
+    hexrng | basenc -d --base16 | genkey-mldsa44 --seed=- -o thekey
+
+The file will be read until EOF and must contain the exact amount
+needed for the seed (which is 32 bytes for both ML-DSA-44 and
+Ed25519). If your source has more bytes than that, you may pipe it
+through: dd bs=1 count=32
+
+NOTE: The security of the private key relies entirely on the quality
+and secrecy of the seed that you provide. Ensure it comes from an
+unpredictable source of randomness.
+
 The options -l and -e can read both the SSH private key (PEM), and SSH
 public key formats. Reading as private key is attempted first. Since
 this always contains the public key in plain, non-enrypted, format, no
@@ -53,6 +69,7 @@ line).
 	vkeyName := ""
 	keyType := "mldsa44"
 	passphrase := ""
+	seedFile := ""
 
 	set := getopt.New()
 	set.FlagLong(&showHelp, "help", 'h', "Show this help")
@@ -60,6 +77,7 @@ line).
 		SetGroup(groupOLE)
 	set.FlagLong(&passphrase, "passphrase", 'N', "Set passphrase for encryption, empty string for no encryption", "string")
 	set.Flag(&keyType, 't', "Set type of key to generate, mldsa44 or ed25519", "keytype")
+	set.FlagLong(&seedFile, "seed", 'S', "Read the random seed bytes for the private key from file. \"-\" can be used for stdin.", "filename")
 	set.FlagLong(&showFPFile, "show", 'l', "Show SSH fingerprint of a public key from an SSH public or private key file", "filename").
 		SetGroup(groupOLE)
 	set.Flag(&showVkeyFile, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of a public key from an SSH public or private key file", "filename").
@@ -78,8 +96,8 @@ line).
 		set.PrintUsage(os.Stderr)
 		os.Exit(2)
 	}
-	if (set.IsSet('t') || set.IsSet('N')) && (set.IsSet('l') || set.IsSet('e')) {
-		fmt.Fprintf(os.Stderr, "Option -t and -N can only be used when generating a key\n")
+	if (set.IsSet('t') || set.IsSet('N') || set.IsSet('S')) && (set.IsSet('l') || set.IsSet('e')) {
+		fmt.Fprintf(os.Stderr, "Option -t, -N, and -S can only be used when generating a key\n")
 		os.Exit(2)
 	}
 	if set.IsSet('e') && !set.IsSet('n') {
@@ -100,7 +118,11 @@ line).
 	} else if set.IsSet('e') {
 		err = showVkey(showVkeyFile, vkeyName)
 	} else {
-		err = genkey(outFile, keyType, set.Lookup('N'))
+		if set.IsSet('S') && seedFile == "" {
+			fmt.Fprintf(os.Stderr, "Option -S (--seed) has empty filename\n")
+			os.Exit(2)
+		}
+		err = genkey(outFile, keyType, seedFile, set.Lookup('N'))
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
@@ -165,23 +187,50 @@ func pubkeyFromFile(fileName string) (crypto.PublicKey, error) {
 	return pub, nil
 }
 
-func genkey(outFile string, keyType string, passphraseOpt getopt.Option) error {
+func genkey(outFile string, keyType string, seedFile string, passphraseOpt getopt.Option) error {
 	var algName string
 	var privBytes, pubBytes []byte
 	switch keyType {
 	case "ed25519":
 		algName = agent.AlgEd25519
-		pub, priv, err := ed25519.GenerateKey(nil)
-		if err != nil {
-			return fmt.Errorf("failed to generate: %w", err)
+		var priv ed25519.PrivateKey
+		if seedFile != "" {
+			seed, err := withInputFile(seedFile, func(r io.Reader) ([]byte, error) {
+				return readBytes(r, ed25519.SeedSize)
+			})
+			if err != nil {
+				return fmt.Errorf("failed to read seed from file: %w", err)
+			}
+			priv = ed25519.NewKeyFromSeed(seed)
+		} else {
+			var err error
+			_, priv, err = ed25519.GenerateKey(nil)
+			if err != nil {
+				return fmt.Errorf("failed to generate: %w", err)
+			}
 		}
 		privBytes = priv.Seed()
-		pubBytes = []byte(pub)
+		pubBytes = []byte(priv.Public().(ed25519.PublicKey))
 	case "mldsa44":
 		algName = agent.AlgMLDSA44
-		priv, err := mldsa.GenerateKey(mldsa.MLDSA44())
-		if err != nil {
-			return fmt.Errorf("failed to generate: %w", err)
+		var priv *mldsa.PrivateKey
+		if seedFile != "" {
+			seed, err := withInputFile(seedFile, func(r io.Reader) ([]byte, error) {
+				return readBytes(r, mldsa.PrivateKeySize)
+			})
+			if err != nil {
+				return fmt.Errorf("failed to read seed from file: %w", err)
+			}
+			priv, err = mldsa.NewPrivateKey(mldsa.MLDSA44(), seed)
+			if err != nil {
+				return fmt.Errorf("failed NewPrivateKey: %w", err)
+			}
+		} else {
+			var err error
+			priv, err = mldsa.GenerateKey(mldsa.MLDSA44())
+			if err != nil {
+				return fmt.Errorf("failed to generate: %w", err)
+			}
 		}
 		privBytes = priv.Bytes()
 		pubBytes = priv.PublicKey().Bytes()
@@ -234,6 +283,34 @@ func genkey(outFile string, keyType string, passphraseOpt getopt.Option) error {
 		fmt.Printf("%s\n", fp)
 	}
 	return nil
+}
+
+func withInputFile(filename string, f func(r io.Reader) ([]byte, error)) ([]byte, error) {
+	var file *os.File
+	if filename == "-" {
+		file = os.Stdin
+	} else {
+		var err error
+		file, err = os.Open(filename)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+	}
+	return f(file)
+}
+
+func readBytes(r io.Reader, byteCount int) ([]byte, error) {
+	buf := make([]byte, byteCount+1)
+	n, err := io.ReadFull(r, buf)
+	if n != byteCount || !errors.Is(err, io.ErrUnexpectedEOF) {
+		msg := fmt.Sprintf("got %d bytes, expected %d", n, byteCount)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", msg, err)
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
+	return buf[:byteCount], nil
 }
 
 // fingerprint creates an SSH-fingerprint from raw pubkey bytes. An
