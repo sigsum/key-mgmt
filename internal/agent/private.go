@@ -55,11 +55,27 @@ func ParsePrivateKeyFile(ascii []byte, getPassphrase GetPassphraseFunc) (crypto.
 	if err != nil {
 		return nil, fmt.Errorf("parsing private key: %w", err)
 	}
-	signer, err := readPrivateKey(data, getPassphrase)
+	p, err := readPrivateKey(data, getPassphrase)
 	if err != nil {
 		return nil, fmt.Errorf("reading private key: %w", err)
 	}
-	return signer, nil
+	return p.signer, nil
+}
+
+// ParseSeedFromPrivateKeyFile reads an ASCII format private key in a
+// manner similar to ParsePrivateKeyFile. Returns the algorithm name
+// of the contained key, the private key seed bytes, and the public
+// key bytes.
+func ParseSeedFromPrivateKeyFile(ascii []byte, getPassphrase GetPassphraseFunc) (string, []byte, []byte, error) {
+	data, err := parsePrivateKeyFile(ascii)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("parsing private key: %w", err)
+	}
+	p, err := readPrivateKey(data, getPassphrase)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("reading private key: %w", err)
+	}
+	return p.algName, p.priv, p.pub, nil
 }
 
 // ParsePublicFromPrivateKeyFile reads an ASCII format private key in
@@ -150,7 +166,14 @@ func parsePrivateKeyFile(ascii []byte) (*privateKeyData, error) {
 	})
 }
 
-func readPrivateKey(data *privateKeyData, getPassphrase GetPassphraseFunc) (crypto.Signer, error) {
+type privateKey struct {
+	signer  crypto.Signer
+	priv    []byte
+	pub     []byte
+	algName string
+}
+
+func readPrivateKey(data *privateKeyData, getPassphrase GetPassphraseFunc) (*privateKey, error) {
 	var decryptor decryptFunc
 	switch data.cipherName {
 	case "none":
@@ -190,14 +213,14 @@ func readPrivateKey(data *privateKeyData, getPassphrase GetPassphraseFunc) (cryp
 	}
 
 	return parseBytes(decrypted, opensshPrivateKeyPadding,
-		func(r io.Reader) (crypto.Signer, error) {
+		func(r io.Reader) (*privateKey, error) {
 			return readPrivateKeyInner(r, data.publicKeyBlob)
 		})
 }
 
 // readPrivateKeyInner reads the inner private key data, i.e. the
 // section that is potentially encrypted.
-func readPrivateKeyInner(r io.Reader, publicKeyBlob []byte) (crypto.Signer, error) {
+func readPrivateKeyInner(r io.Reader, publicKeyBlob []byte) (*privateKey, error) {
 	pubData, err := parseBytes(publicKeyBlob, nil, readPubBlob)
 	if err != nil {
 		return nil, fmt.Errorf("invalid private key, pubkey invalid: %w", err)
@@ -235,15 +258,21 @@ func readPrivateKeyInner(r io.Reader, publicKeyBlob []byte) (crypto.Signer, erro
 		return nil, fmt.Errorf("comment string missing")
 	}
 
+	p := &privateKey{
+		algName: pubData.algName,
+		priv:    keys[:pubData.privSize],
+		pub:     keys[pubData.privSize:],
+	}
 	switch pubData.algName {
 	case AlgEd25519:
-		return ed25519.PrivateKey(keys), nil
+		p.signer = ed25519.PrivateKey(keys)
+		return p, nil
 	case AlgMLDSA44:
-		priv, err := mldsa.NewPrivateKey(mldsa.MLDSA44(), keys[:pubData.privSize])
+		p.signer, err = mldsa.NewPrivateKey(mldsa.MLDSA44(), keys[:pubData.privSize])
 		if err != nil {
 			return nil, fmt.Errorf("failed to create private key: %w", err)
 		}
-		return priv, nil
+		return p, nil
 	default:
 		return nil, fmt.Errorf("unsupported key algorithm: %s", pubData.algName)
 	}
