@@ -28,3 +28,13 @@ case "$stderr" in
   *) exit 1;;
 esac
 set -e
+
+# Check that --mix mixes provided seed with local entropy
+printf "0000000000000000000000000000000000000000000000000000000000000004" | basenc -d --base16 \
+  | go run ../cmd/genkey-mldsa44 -S - --mix -N "" -o tmp.key2 >/dev/null 2>&1
+fp=$(go run ../cmd/genkey-mldsa44 -l tmp.key2.pub)
+case "$fp" in
+  SHA256:djlRICDM04seN4NY2QmHJ+2/sIpUNd6C4RKjE2L8YVc) exit 1;;  # just provided seed, not mixed
+  SHA256*) ;;
+  *) exit 1;;
+esac
