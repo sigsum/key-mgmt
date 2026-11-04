@@ -26,8 +26,7 @@ import (
 
 func main() {
 	const (
-		groupOLE = "NOTE1"
-		usage    = `
+		usage = `
 Generate ML-DSA-44 private key
 
 The generated ML-DSA-44 private key is by default printed to stdout in
@@ -58,32 +57,29 @@ this always contains the public key in plain, non-enrypted, format, no
 passphrase will be needed. If the file is not PEM-encoded, it is read
 as an SSH public key, with support for one single public key (one
 line).
-
-` + groupOLE + `: options -o, -l, and -e are mutually exclusive
 `
 	)
 	showHelp := false
 	outFile := ""
-	showFPFile := ""
-	showVkeyFile := ""
-	vkeyName := ""
+	doShowFP := false
+	doShowVkey := ""
+	doReencrypt := false
+	keyPassFile := ""
 	keyType := "mldsa44"
 	passphrase := ""
 	seedFile := ""
 
-	set := getopt.New()
+	set := set{getopt.New()}
 	set.FlagLong(&showHelp, "help", 'h', "Show this help")
-	set.FlagLong(&outFile, "output", 'o', "Output generated private key to filename, its SSH public key to filename.pub, and the fingerprint to stdout", "filename").
-		SetGroup(groupOLE)
-	set.FlagLong(&passphrase, "passphrase", 'N', "Set passphrase for encryption, empty string for no encryption", "string")
+	set.FlagLong(&outFile, "output", 'o', "Output generated private key to filename, its SSH public key to filename.pub, and the fingerprint to stdout", "filename")
+	set.FlagLong(&passphrase, "passphrase", 'N', "Set passphrase for encrypting the private key, empty string for no encryption", "string")
 	set.Flag(&keyType, 't', "Set type of key to generate, mldsa44 or ed25519", "keytype")
 	set.FlagLong(&seedFile, "seed", 'S', "Read the random seed bytes for the private key from file. \"-\" can be used for stdin.", "filename")
-	set.FlagLong(&showFPFile, "show", 'l', "Show SSH fingerprint of a public key from an SSH public or private key file", "filename").
-		SetGroup(groupOLE)
-	set.Flag(&showVkeyFile, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of a public key from an SSH public or private key file", "filename").
-		SetGroup(groupOLE)
-	set.Flag(&vkeyName, 'n', "Set key name for vkey. Required for -e.", "keyname")
-	set.SetParameters("")
+	set.FlagLong(&doShowFP, "show", 'l', "Show SSH fingerprint of a public key from an SSH public or private key file")
+	set.Flag(&doShowVkey, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of a public key from an SSH public or private key file", "keyname")
+	set.FlagLong(&doReencrypt, "reencrypt", 'r', "Re-encrypt a private key file, usable options: -o, -N, -p")
+	set.FlagLong(&keyPassFile, "key-passphrase-file", 'p', "For providing old passphrase for -r, file with lines of: key-file:passphrase", "filename")
+	set.SetParameters("[input-file]")
 	err := set.Getopt(os.Args, nil)
 	// Check early if user wants help
 	if showHelp {
@@ -96,29 +92,53 @@ line).
 		set.PrintUsage(os.Stderr)
 		os.Exit(2)
 	}
-	if (set.IsSet('t') || set.IsSet('N') || set.IsSet('S')) && (set.IsSet('l') || set.IsSet('e')) {
-		fmt.Fprintf(os.Stderr, "Option -t, -N, and -S can only be used when generating a key\n")
+
+	if set.seenMultiple('o', 'l', 'e') {
+		fmt.Fprintf(os.Stderr, "Only one of options -o, -l, and -e can be used at once\n")
 		os.Exit(2)
 	}
-	if set.IsSet('e') && !set.IsSet('n') {
-		fmt.Fprintf(os.Stderr, "Option -e requires a key name set using -n\n")
+	if set.seenMultiple('r', 'l', 'e') {
+		fmt.Fprintf(os.Stderr, "Only one of options -r, -l, and -e can be used at once\n")
 		os.Exit(2)
 	}
-	if !set.IsSet('e') && set.IsSet('n') {
-		fmt.Fprintf(os.Stderr, "Option -n can only be used with -e\n")
-		os.Exit(2)
-	}
-	if set.NArgs() > 0 {
+
+	inputFile := ""
+	if set.seenAny('r', 'l', 'e') {
+		switch set.NArgs() {
+		case 0:
+			inputFile = "-"
+		case 1:
+			inputFile = set.Args()[0]
+		default:
+			fmt.Fprintf(os.Stderr, "Too many positional args\n")
+			os.Exit(2)
+		}
+		if set.seenAny('t', 'S') {
+			fmt.Fprintf(os.Stderr, "Options -t and -S can only be used when generating a new key\n")
+			os.Exit(2)
+		}
+	} else if set.NArgs() > 0 {
 		fmt.Fprintf(os.Stderr, "Unexpected positional args: %q\n", set.Args())
 		os.Exit(2)
 	}
 
-	if set.IsSet('l') {
-		err = showFP(showFPFile)
-	} else if set.IsSet('e') {
-		err = showVkey(showVkeyFile, vkeyName)
+	if set.seen('N') && set.seenAny('l', 'e') {
+		fmt.Fprintf(os.Stderr, "Option -N can only be used when generating a new key, or re-encrypting an existing\n")
+		os.Exit(2)
+	}
+	if !set.seen('r') && set.seen('p') {
+		fmt.Fprintf(os.Stderr, "Option -p can only be used with -r\n")
+		os.Exit(2)
+	}
+
+	if set.seen('l') {
+		err = showFP(inputFile)
+	} else if set.seen('e') {
+		err = showVkey(inputFile, doShowVkey)
+	} else if set.seen('r') {
+		err = reencrypt(outFile, inputFile, keyPassFile, set.Lookup('N'))
 	} else {
-		if set.IsSet('S') && seedFile == "" {
+		if set.seen('S') && seedFile == "" {
 			fmt.Fprintf(os.Stderr, "Option -S (--seed) has empty filename\n")
 			os.Exit(2)
 		}
@@ -128,6 +148,32 @@ line).
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
+}
+
+type set struct {
+	*getopt.Set
+}
+
+func (s set) seen(shortOrLong any) bool {
+	return s.IsSet(shortOrLong)
+}
+
+func (s set) seenAny(shortOrLongs ...any) bool {
+	return s.countSeen(shortOrLongs) > 0
+}
+
+func (s set) seenMultiple(shortOrLongs ...any) bool {
+	return s.countSeen(shortOrLongs) > 1
+}
+
+func (s set) countSeen(shortOrLongs []any) int {
+	count := 0
+	for i := range shortOrLongs {
+		if s.seen(shortOrLongs[i]) {
+			count++
+		}
+	}
+	return count
 }
 
 func showFP(fileName string) error {
@@ -170,7 +216,7 @@ func showVkey(fileName string, keyName string) error {
 }
 
 func pubkeyFromFile(fileName string) (crypto.PublicKey, error) {
-	data, err := os.ReadFile(fileName)
+	data, err := withInputFile(fileName, io.ReadAll)
 	if err != nil {
 		return nil, err
 	}
@@ -238,35 +284,7 @@ func genkey(outFile string, keyType string, seedFile string, passphraseOpt getop
 		return fmt.Errorf("unsupported keytype: %s", keyType)
 	}
 
-	var passphrase string
-	if passphraseOpt.Seen() {
-		passphrase = passphraseOpt.Value().String()
-	} else {
-		pass, err := ui.ReadSecret("Enter new passphrase (empty for no encryption):")
-		if err != nil {
-			return fmt.Errorf("failed to read passphrase: %w", err)
-		}
-		if again, err := ui.ReadSecret("Confirm passphrase:"); err != nil {
-			return fmt.Errorf("failed to read passphrase: %w", err)
-		} else if !bytes.Equal(pass, again) {
-			return fmt.Errorf("passphrases did not match")
-		}
-		passphrase = string(pass)
-	}
-
-	var f *os.File
-	if outFile == "" {
-		f = os.Stdout
-	} else {
-		var err error
-		f, err = os.OpenFile(outFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-	}
-
-	if err := agent.WritePrivateKeyFile(f, agent.NewPassphraseEncryptor(passphrase), algName, pubBytes, privBytes); err != nil {
+	if err := writePrivateKeyFile(outFile, algName, privBytes, pubBytes, passphraseOpt); err != nil {
 		return err
 	}
 
@@ -282,6 +300,7 @@ func genkey(outFile string, keyType string, seedFile string, passphraseOpt getop
 		}
 		fmt.Printf("%s\n", fp)
 	}
+
 	return nil
 }
 
@@ -311,6 +330,74 @@ func readBytes(r io.Reader, byteCount int) ([]byte, error) {
 		return nil, fmt.Errorf("%s", msg)
 	}
 	return buf[:byteCount], nil
+}
+
+func reencrypt(newKeyFile string, keyFile string, keyPassFile string, passphraseNewOpt getopt.Option) error {
+	data, err := withInputFile(keyFile, io.ReadAll)
+	if err != nil {
+		return err
+	}
+
+	newGetPassphraseFunc := ui.NewTerminalGetPassphrase
+	if keyPassFile != "" {
+		r, err := os.Open(keyPassFile)
+		if err != nil {
+			return fmt.Errorf("failed to open %q: %w", keyPassFile, err)
+		}
+		newGetPassphraseFunc, err = ui.ParseKeyPassFile(r)
+		_ = r.Close()
+		if err != nil {
+			return fmt.Errorf("%s:%w", keyPassFile, err)
+		}
+	}
+
+	algName, privBytes, pubBytes, err := agent.ParseSeedFromPrivateKeyFile(data, newGetPassphraseFunc(keyFile))
+	if err != nil {
+		return fmt.Errorf("read private key from file %q failed: %w", keyFile, err)
+	}
+
+	return writePrivateKeyFile(newKeyFile, algName, privBytes, pubBytes, passphraseNewOpt)
+}
+
+func writePrivateKeyFile(outFile string, algName string, privBytes []byte, pubBytes []byte, passphraseOpt getopt.Option) error {
+	var passphrase string
+	if passphraseOpt.Seen() {
+		passphrase = passphraseOpt.Value().String()
+	} else {
+		var err error
+		pass, err := ui.ReadSecret("Enter new passphrase (empty for no encryption):")
+		if err != nil {
+			return fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		if again, err := ui.ReadSecret("Confirm passphrase:"); err != nil {
+			return fmt.Errorf("failed to read passphrase: %w", err)
+		} else if !bytes.Equal(pass, again) {
+			return fmt.Errorf("passphrases did not match")
+		}
+		passphrase = string(pass)
+
+	}
+	if passphrase == "" {
+		log.Printf("No passphrase set, private key file will NOT be encrypted")
+	}
+
+	var f *os.File
+	if outFile == "" {
+		f = os.Stdout
+	} else {
+		var err error
+		f, err = os.OpenFile(outFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+	}
+
+	if err := agent.WritePrivateKeyFile(f, agent.NewPassphraseEncryptor(passphrase), algName, pubBytes, privBytes); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // fingerprint creates an SSH-fingerprint from raw pubkey bytes. An

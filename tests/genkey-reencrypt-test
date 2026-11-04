@@ -1,0 +1,20 @@
+#! /bin/sh
+
+set -e
+
+cd "$(dirname "$0")"
+
+rm -f tmp.*
+
+# Generate key encrypted with pass1
+fp1=$(go run ../cmd/genkey-mldsa44 -N "pass1" -o tmp.key)
+[ -n "$fp1" ]
+# Re-encrypt with pass2
+printf -- "-:pass1\n" >tmp.passfile
+go run ../cmd/genkey-mldsa44 --reencrypt -p tmp.passfile -N "pass2" -o tmp.key2 <tmp.key
+fp2=$(go run ../cmd/genkey-mldsa44 -l tmp.key2)
+# Check keys are the same
+[ "$fp1" = "$fp2" ]
+# Check decrypting with pass2
+printf "tmp.key2:pass2\n" >tmp.passfile2
+go run ../cmd/sigsum-agent -k tmp.key2 -p tmp.passfile2 true

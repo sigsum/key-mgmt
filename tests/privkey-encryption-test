@@ -44,7 +44,7 @@ go run ../cmd/sigsum-agent -p tmp.passfile -k tmp.key3 true
 go run ../cmd/genkey-mldsa44 -l tmp.key3 | grep -q "^$sshfp$"
 
 # Check also without encryption
-sshfp=$(go run ../cmd/genkey-mldsa44 -o tmp.key4 -N "")
+sshfp=$(go run ../cmd/genkey-mldsa44 -o tmp.key4 -N "" 2>/dev/null)
 go run ../cmd/sigsum-agent -k tmp.key4 true
 [ -n "$sshfp" ]
 go run ../cmd/genkey-mldsa44 -l tmp.key4 | grep -q "^$sshfp$"
