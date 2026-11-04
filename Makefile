@@ -16,3 +16,4 @@ check:
 	./tests/signverify-mldsa-test
 	./tests/privkey-encryption-test
 	./tests/genkey-seed-test
+	./tests/genkey-reencrypt-test
