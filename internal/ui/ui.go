@@ -34,7 +34,7 @@ func ReadSecret(prompt string) ([]byte, error) {
 		inFd = fd
 		out = os.Stderr
 	} else {
-		return nil, fmt.Errorf("no terminal for reading passphrase")
+		return nil, fmt.Errorf("no terminal for reading passphrase (if running over ssh, try: ssh -t)")
 	}
 	if _, err := fmt.Fprintf(out, "%s ", prompt); err != nil {
 		return nil, fmt.Errorf("failed print prompt: %w", err)
