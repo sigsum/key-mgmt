@@ -61,11 +61,10 @@ line).
 	)
 	showHelp := false
 	outFile := ""
-	showFPFile := ""
-	showVkeyFile := ""
-	reencryptFile := ""
+	doShowFP := false
+	doShowVkey := ""
+	doReencrypt := false
 	keyPassFile := ""
-	vkeyName := ""
 	keyType := "mldsa44"
 	passphrase := ""
 	seedFile := ""
@@ -76,12 +75,11 @@ line).
 	set.FlagLong(&passphrase, "passphrase", 'N', "Set passphrase for encrypting the private key, empty string for no encryption", "string")
 	set.Flag(&keyType, 't', "Set type of key to generate, mldsa44 or ed25519", "keytype")
 	set.FlagLong(&seedFile, "seed", 'S', "Read the random seed bytes for the private key from file. \"-\" can be used for stdin.", "filename")
-	set.FlagLong(&showFPFile, "show", 'l', "Show SSH fingerprint of a public key from an SSH public or private key file", "filename")
-	set.Flag(&showVkeyFile, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of a public key from an SSH public or private key file", "filename")
-	set.FlagLong(&reencryptFile, "reencrypt", 'r', "Re-encrypt a private key file, usable options: -o, -N, -p", "filename")
+	set.FlagLong(&doShowFP, "show", 'l', "Show SSH fingerprint of a public key from an SSH public or private key file")
+	set.Flag(&doShowVkey, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of a public key from an SSH public or private key file", "keyname")
+	set.FlagLong(&doReencrypt, "reencrypt", 'r', "Re-encrypt a private key file, usable options: -o, -N, -p")
 	set.FlagLong(&keyPassFile, "key-passphrase-file", 'p', "For providing old passphrase for -r, file with lines of: key-file:passphrase", "filename")
-	set.Flag(&vkeyName, 'n', "Set key name for vkey. Required for -e.", "keyname")
-	set.SetParameters("")
+	set.SetParameters("[input-file]")
 	err := set.Getopt(os.Args, nil)
 	// Check early if user wants help
 	if showHelp {
@@ -103,37 +101,42 @@ line).
 		fmt.Fprintf(os.Stderr, "Only one of options -r, -l, and -e can be used at once\n")
 		os.Exit(2)
 	}
-	if set.seenAny('t', 'S') && set.seenAny('r', 'l', 'e') {
-		fmt.Fprintf(os.Stderr, "Options -t and -S can only be used when generating a new key\n")
+
+	inputFile := ""
+	if set.seenAny('r', 'l', 'e') {
+		switch set.NArgs() {
+		case 0:
+			inputFile = "-"
+		case 1:
+			inputFile = set.Args()[0]
+		default:
+			fmt.Fprintf(os.Stderr, "Too many positional args\n")
+			os.Exit(2)
+		}
+		if set.seenAny('t', 'S') {
+			fmt.Fprintf(os.Stderr, "Options -t and -S can only be used when generating a new key\n")
+			os.Exit(2)
+		}
+	} else if set.NArgs() > 0 {
+		fmt.Fprintf(os.Stderr, "Unexpected positional args: %q\n", set.Args())
 		os.Exit(2)
 	}
+
 	if set.seen('N') && set.seenAny('l', 'e') {
 		fmt.Fprintf(os.Stderr, "Option -N can only be used when generating a new key, or re-encrypting an existing\n")
-		os.Exit(2)
-	}
-	if set.seen('e') && !set.seen('n') {
-		fmt.Fprintf(os.Stderr, "Option -e requires a key name set using -n\n")
-		os.Exit(2)
-	}
-	if !set.seen('e') && set.seen('n') {
-		fmt.Fprintf(os.Stderr, "Option -n can only be used with -e\n")
 		os.Exit(2)
 	}
 	if !set.seen('r') && set.seen('p') {
 		fmt.Fprintf(os.Stderr, "Option -p can only be used with -r\n")
 		os.Exit(2)
 	}
-	if set.NArgs() > 0 {
-		fmt.Fprintf(os.Stderr, "Unexpected positional args: %q\n", set.Args())
-		os.Exit(2)
-	}
 
 	if set.seen('l') {
-		err = showFP(showFPFile)
+		err = showFP(inputFile)
 	} else if set.seen('e') {
-		err = showVkey(showVkeyFile, vkeyName)
+		err = showVkey(inputFile, doShowVkey)
 	} else if set.seen('r') {
-		err = reencrypt(outFile, reencryptFile, keyPassFile, set.Lookup('N'))
+		err = reencrypt(outFile, inputFile, keyPassFile, set.Lookup('N'))
 	} else {
 		if set.seen('S') && seedFile == "" {
 			fmt.Fprintf(os.Stderr, "Option -S (--seed) has empty filename\n")
@@ -213,7 +216,7 @@ func showVkey(fileName string, keyName string) error {
 }
 
 func pubkeyFromFile(fileName string) (crypto.PublicKey, error) {
-	data, err := os.ReadFile(fileName)
+	data, err := withInputFile(fileName, io.ReadAll)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +333,7 @@ func readBytes(r io.Reader, byteCount int) ([]byte, error) {
 }
 
 func reencrypt(newKeyFile string, keyFile string, keyPassFile string, passphraseNewOpt getopt.Option) error {
-	data, err := os.ReadFile(keyFile)
+	data, err := withInputFile(keyFile, io.ReadAll)
 	if err != nil {
 		return err
 	}
