@@ -10,8 +10,8 @@ rm -f tmp.*
 fp1=$(go run ../cmd/genkey-mldsa44 -N "pass1" -o tmp.key)
 [ -n "$fp1" ]
 # Re-encrypt with pass2
-printf "tmp.key:pass1\n" >tmp.passfile
-go run ../cmd/genkey-mldsa44 --reencrypt tmp.key -p tmp.passfile -N "pass2" -o tmp.key2
+printf -- "-:pass1\n" >tmp.passfile
+go run ../cmd/genkey-mldsa44 --reencrypt -p tmp.passfile -N "pass2" -o tmp.key2 <tmp.key
 fp2=$(go run ../cmd/genkey-mldsa44 -l tmp.key2)
 # Check keys are the same
 [ "$fp1" = "$fp2" ]
