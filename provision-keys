@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set -eu
+
+target="${1?gimme target, host for ssh}"
+keyf=/tmp/mldsa.key
+pass1f=/dev/shm/pass1
+
+key2f=/dev/shm/mldsa-pass2.key
+pass2f=/dev/shm/pass2
+
+saylocal() {
+  printf "\e[36mlocal: %s\e[0m\n" "$1"
+}
+saytarget() {
+  printf "\e[33m%s: %s\e[0m\n" "$target" "$1"
+}
+
+printf "building ...\n"
+go build -o . ./cmd/genkey-mldsa44
+printf "copying tools to %s ...\n" "$target"
+scp -qp genkey-mldsa44 "$target":
+
+saylocal "using TKey to generate passphrase1 (32 hexdigits)"
+pass1=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>/dev/null)
+printf "%s" "$pass1" \
+  | ssh "$target" "cat >$pass1f"
+saytarget "stored passphrase1 in: $pass1f"
+
+saylocal "using TKey to generate private key seed (16 bytes)"
+seed=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>/dev/null)
+saytarget "creating key encrypted with passphrase1"
+printf "%s" "$seed" \
+  | basenc --base16 -d \
+  | ssh "$target" ./genkey-mldsa44 -t mldsa44 --seed - --mix -N "$pass1" -o "$keyf"
+saytarget "stored key (passphrase1) in: $keyf"
+
+saylocal "using TKey to generate passphrase2 (32 hexdigits)"
+pass2=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>/dev/null)
+saytarget "re-encrypting private key with passphrase2"
+# Quoting the process and command substitution, so they are run on target
+ssh "$target" ./genkey-mldsa44 --reencrypt -p '<(' printf "$keyf:%s" '$(' cat "$pass1f" ')' ')' -N "$pass2" "$keyf" >"$key2f"
+saylocal "stored key (passphrase2) in: $key2f"
+printf "%s" "$pass2" >"$pass2f"
+saylocal "stored passphrase2 in: $pass2f"
