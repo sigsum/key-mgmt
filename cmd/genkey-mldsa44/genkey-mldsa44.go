@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ed25519"
+	"crypto/hkdf"
 	"crypto/mldsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -47,6 +49,10 @@ needed for the seed (which is 32 bytes for both ML-DSA-44 and
 Ed25519). If your source has more bytes than that, you may pipe it
 through: dd bs=1 count=32
 
+Use the --mix option to mix local system entropy together with the
+bytes provided by the seed file (-S), into the final seed. This done
+using HKDF with SHA256 over both entropy sources.
+
 NOTE: The security of the private key relies entirely on the quality
 and secrecy of the seed that you provide. Ensure it comes from an
 unpredictable source of randomness.
@@ -68,13 +74,15 @@ line).
 	keyType := "mldsa44"
 	passphrase := ""
 	seedFile := ""
+	mixSeed := false
 
 	set := set{getopt.New()}
 	set.FlagLong(&showHelp, "help", 'h', "Show this help")
 	set.FlagLong(&outFile, "output", 'o', "Output generated private key to filename, its SSH public key to filename.pub, and the fingerprint to stdout", "filename")
 	set.FlagLong(&passphrase, "passphrase", 'N', "Set passphrase for encrypting the private key, empty string for no encryption", "string")
 	set.Flag(&keyType, 't', "Set type of key to generate, mldsa44 or ed25519", "keytype")
-	set.FlagLong(&seedFile, "seed", 'S', "Read the random seed bytes for the private key from file. \"-\" can be used for stdin.", "filename")
+	set.FlagLong(&seedFile, "seed", 'S', "Read the random seed bytes for the private key from file. \"-\" can be used for stdin. See also --mix", "filename")
+	set.FlagLong(&mixSeed, "mix", 0, "Use HKDF/SHA256 to mix entropy from seed file (-S) together with local system entropy")
 	set.FlagLong(&doShowFP, "show", 'l', "Show SSH fingerprint of a public key from an SSH public or private key file")
 	set.Flag(&doShowVkey, 'e', "Show cosignature vkey (signature type 0x04 or 0x06) of a public key from an SSH public or private key file", "keyname")
 	set.FlagLong(&doReencrypt, "reencrypt", 'r', "Re-encrypt a private key file, usable options: -o, -N, -p")
@@ -130,6 +138,10 @@ line).
 		fmt.Fprintf(os.Stderr, "Option -p can only be used with -r\n")
 		os.Exit(2)
 	}
+	if !set.seen('S') && set.seen("mix") {
+		fmt.Fprintf(os.Stderr, "Option --mix can only be used with -S\n")
+		os.Exit(2)
+	}
 
 	if set.seen('l') {
 		err = showFP(inputFile)
@@ -142,7 +154,7 @@ line).
 			fmt.Fprintf(os.Stderr, "Option -S (--seed) has empty filename\n")
 			os.Exit(2)
 		}
-		err = genkey(outFile, keyType, seedFile, set.Lookup('N'))
+		err = genkey(outFile, keyType, seedFile, mixSeed, set.Lookup('N'))
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
@@ -233,7 +245,7 @@ func pubkeyFromFile(fileName string) (crypto.PublicKey, error) {
 	return pub, nil
 }
 
-func genkey(outFile string, keyType string, seedFile string, passphraseOpt getopt.Option) error {
+func genkey(outFile string, keyType string, seedFile string, mixSeed bool, passphraseOpt getopt.Option) error {
 	var algName string
 	var privBytes, pubBytes []byte
 	switch keyType {
@@ -241,11 +253,9 @@ func genkey(outFile string, keyType string, seedFile string, passphraseOpt getop
 		algName = agent.AlgEd25519
 		var priv ed25519.PrivateKey
 		if seedFile != "" {
-			seed, err := withInputFile(seedFile, func(r io.Reader) ([]byte, error) {
-				return readBytes(r, ed25519.SeedSize)
-			})
+			seed, err := readSeed(seedFile, mixSeed, ed25519.SeedSize)
 			if err != nil {
-				return fmt.Errorf("failed to read seed from file: %w", err)
+				return err
 			}
 			priv = ed25519.NewKeyFromSeed(seed)
 		} else {
@@ -261,11 +271,9 @@ func genkey(outFile string, keyType string, seedFile string, passphraseOpt getop
 		algName = agent.AlgMLDSA44
 		var priv *mldsa.PrivateKey
 		if seedFile != "" {
-			seed, err := withInputFile(seedFile, func(r io.Reader) ([]byte, error) {
-				return readBytes(r, mldsa.PrivateKeySize)
-			})
+			seed, err := readSeed(seedFile, mixSeed, mldsa.PrivateKeySize)
 			if err != nil {
-				return fmt.Errorf("failed to read seed from file: %w", err)
+				return err
 			}
 			priv, err = mldsa.NewPrivateKey(mldsa.MLDSA44(), seed)
 			if err != nil {
@@ -302,6 +310,34 @@ func genkey(outFile string, keyType string, seedFile string, passphraseOpt getop
 	}
 
 	return nil
+}
+
+// readSeed reads seed bytes of the required size from a file.
+// Optionally mix those bytes with same amount of local system
+// entropy, using HKDF with SHA256.
+func readSeed(extSeedFile string, mixSeed bool, size int) ([]byte, error) {
+	extSeed, err := withInputFile(extSeedFile, func(r io.Reader) ([]byte, error) {
+		return readBytes(r, size)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read seed from file: %w", err)
+	}
+
+	if !mixSeed {
+		return extSeed, nil
+	}
+
+	loc := make([]byte, size)
+	if _, err := io.ReadFull(rand.Reader, loc); err != nil {
+		return nil, err
+	}
+
+	seed, err := hkdf.Key(sha256.New, append(extSeed, loc...), nil, "key-mgmt/genkey/mixed", size)
+	if err != nil {
+		return nil, err
+	}
+
+	return seed, nil
 }
 
 func withInputFile(filename string, f func(r io.Reader) ([]byte, error)) ([]byte, error) {
