@@ -8,10 +8,10 @@ say() {
 }
 
 target=$1; shift
-pass1=$1; shift
-pass2=$1; shift
+pass=$1; shift
 tkeyentropy=$1; shift
 targetkeyf=$1; shift
+targetkeypassf=$1; shift
 if (( $# > 0 )); then
   say "unexpected positional argument: $*"
   exit 2
@@ -24,25 +24,25 @@ fi
 
 mkdir -p "$(dirname "$targetkeyf")"
 
-printf "%s" "$pass1" | /tmp/efivarpass write
-say "Wrote pass1 to EFI-variable"
-
-say "Creating private key from mixed TKey and local entropy, encrypted with pass1 ..."
+say "Creating privatekey by mixing entropy from TKey and local system, encrypted with passphrase ..."
 /tmp/genkey-mldsa44 -t mldsa44 \
                     --seed <(basenc --base16 -d <<<"$tkeyentropy") \
                     --mix \
-                    -N "$(/tmp/efivarpass read)" \
+                    -N "$pass" \
                     -o "$targetkeyf" \
                     >/dev/null
-say "Wrote privkey(pass1) to $targetkeyf"
+say "Wrote privatekey to $targetkeyf"
 
-/tmp/sigsum-agent -k "$targetkeyf" \
-                  -p <(printf "%s:%s" "$targetkeyf" "$(/tmp/efivarpass read)") \
-                  true
-say "Successfully ran sigsum-agent to decrypt $targetkeyf using pass1 from EFI-variable"
+if [[ -e "$targetkeypassf" ]] && grep -q "^$targetkeyf:" "$targetkeypassf"; then
+  sed -i "s,^$targetkeyf:.*,$targetkeyf:$pass," "$targetkeypassf"
+else
+  printf "%s:%s\n" "$targetkeyf" "$pass" >>"$targetkeypassf"
+fi
+say "Wrote passphrase for $targetkeyf into in $targetkeypassf"
 
-say "Re-encrypting private key with pass2 ..."
-/tmp/genkey-mldsa44 --reencrypt \
-                    -p <(printf "%s:%s" "$targetkeyf" "$(/tmp/efivarpass read)") \
-                    -N "$pass2" \
-                    "$targetkeyf"
+/tmp/sigsum-agent -k "$targetkeyf" -p "$targetkeypassf" true
+say "Successfully ran sigsum-agent to decrypt $targetkeyf"
+
+say "Key SSH fingerprint: $(/tmp/genkey-mldsa44 -l "$targetkeyf")"
+
+cat "$targetkeyf"

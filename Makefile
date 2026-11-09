@@ -19,4 +19,4 @@ check:
 	./tests/genkey-reencrypt-test
 
 shellcheck:
-	shellcheck ./scripts/target-genkey ./scripts/provision-softkey ./scripts/efivarpass
+	shellcheck ./scripts/target-genkey ./scripts/provision-softkey

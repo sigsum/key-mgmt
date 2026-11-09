@@ -2,10 +2,10 @@
 # ML-DSA-44 for Post-Quantum secure cosignatures
 
 This document provides a strategy for managing a soft ML-DSA-44 witness key.  A
-*soft key* is a key that is stored as a file on disk.  When mentioning a private
-key (file) in the following text, such *soft key* is always meant.  If you have
-the option of using an ML-DSA-44 key in a separate hardware domain, please do
-that instead.
+*soft key* is a key that is stored as a file on disk.  When mentioning a signing
+key or private key (file) in the following text, such *soft key* is always
+meant.  If you have the option of using an ML-DSA-44 key in a separate hardware
+domain, please do that instead.
 
 
 ## Overview
@@ -13,8 +13,9 @@ that instead.
 1. The signing key is generated with at least 128 bits of "good" entropy.
 2. Signing requires access to a soft key stored on disk.  This signing key is
    only accessible to root and the user/group that needs access to it.  This
-   signing key is encrypted with a passphrase that is not stored on the disk.
-   The passphrase shall as well have some 128 bits of entropy.
+   signing key is, for the purpose of backup only, encrypted with a passphrase
+   that is also stored on disk.  The passphrase shall as well have some 128 bits
+   of entropy.
 3. Re-provisioning the signing key requires access to an encrypted backup and
    the corresponding passphrase.  The passphrase and the encrypted backup are
    never stored in the same backup location, making key recovery harder.
@@ -22,37 +23,22 @@ that instead.
    system, as well as to the encrypted backup and its passphrase.  In other
    words, we are not trying to protect against an operator that is malicious.
 
-
-## Setting
-
-What we try to protect against are mistakes, misconfiguration, failures, and
-external threats.  Examples of mistakes and misconfiguration include a backup
-job or a system log that accidentally includes the signing key.  Examples of
-failures include a backup location that burns down to the ground.  Examples of
-external threats include an attacker that manages to execute code remotely.
-
 The attacker's goal is to recover the signing key.  The easiest ways to achieve
 this is by gaining root access to the system, compromising specific witness
 software component(s), or breaching two separate backup sites.  All of these
 attack vectors are considered "hard" in our setting, as elaborated on further
 below.
 
-
-## Assumptions
-
 We assume randomness produced by a TKey is "good".
-
-We assume the attacker can get a copy of the system's disk, e.g., because the
-disk broke and was brought outside the usual security perimeter that is
-otherwise secured by locks, alarms, and physical tamper-detection mechanisms.
-
-We assume the attacker is unable to mount other types of physical attacks
-without detection, such as being in a position to inspect RAM at runtime,
-resetting the BIOS password, or tampering with the server's hardware.
 
 We assume the attacker is unable to breach two backup sites without detection.
 Similar to above, this is because of physical security boundaries like locks,
 alarms, safes, and tamper-evident bags.
+
+An attacker being able to mount various types of physical attacks without
+detection is out of scope.  Like getting a copy of the system's disk, being in a
+position to inspect RAM at runtime, resetting the BIOS password, or tampering
+with the server's hardware.
 
 Any attacker that is able to gain root access is out of scope.  It is however in
 scope to make it "hard" to gain root access.  Such hardening is not the primary
@@ -72,20 +58,21 @@ built-in passphrase encryption (bcrypt-pbkdf).  Modelled after Ed25519, the file
 stores the private key seed.  Our `sigsum-agent` can load such files.
 
 The ML-DSA-44 private key file will be created using our `genkey-mldsa44` tool.
-When paired with [`tkey-random-generator`](https://github.com/tillitis/tkey-random-generator),
-our tool will use entropy from the TRNG of a TKey in local machine, mixed (HKDF)
-with entropy from (and on) the remote live-system.
+When paired with [`tkey-random-generator`](https://github.com/tillitis/tkey-random-generator).
+Our tool will be run on the remote live-system (for example a witness server),
+use entropy from the TRNG of a TKey in local machine, mixed (HKDF) with entropy
+from the live-system.
 
 Key generation will be done using a local provisioning machine with a TKey,
-which connects to the live-system (for example a witness server) over a
-Wireguard-tunnel with PSK (pre-shared key).  Thus having PQ-resistance while
-providing the remote live-system entropy (from TKey) for private key seed and
-passphrase.  See also the section on Backup.  This is deemed equivalent to first
-doing key generation on an "air-gapped" (no network access) machine, and then
-using a networked machine to transfer both private key and its passphrase to the
-remote live-system -- an attacker being "present" on any one of these two
-machines (either now, or in the future after having decrypted a dump of tunnel
-traffic) would have access to both key and passphrase.
+which connects to the live-system over a Wireguard-tunnel with PSK (pre-shared
+key).  Thus having PQ-resistance while providing the remote live-system entropy
+(from TKey) for private key seed and passphrase.  See also the section on
+Backup.  This is deemed equivalent to first doing key generation on an
+"air-gapped" machine (with no network access), and then using a networked
+machine to transfer both private key and its passphrase to the remote
+live-system -- an attacker being "present" on any one of these two machines
+(either now, or in the future after having decrypted a dump of tunnel traffic)
+would have access to both key and passphrase.
 
 (If we have OpenSSH 10.6 everywhere, an option could be to use ssh's
 mlkem768x25519-sha256 for key-exchange, and ssh-mldsa44-ed25519 for host/user
@@ -103,56 +90,32 @@ entropy.
 ## Provisioning and operation
 
 Our tools will help us generate and store the private key on the disk of the
-live-system.  The passphrase will be stored in an *EFI variable* on this system.
-The EFI variables store is smallish key-value like storage managed by UEFI
-firmware, it is persistent across reboots, and commonly used for Secure Boot
-keys and other boot-related configuration.  The physical storage may be some SPI
-flash, or NVRAM chip accessible by the UEFI firmware.
+live-system.  The private key will be encrypted with a passphrase, but this is
+only for backup purposes -- the passphrase will also be stored on the disk.
 
-The tools will also make available locally the same private key encrypted with a
-different passphrase.  These are to be stored on two other, separate backup
-sites.
-
-The passphrase in the EFI variable can be accessed from Linux at
-`/sys/firmware/efi/efivars`, which must be limited to root or user that starts
-the `sigsum-agent` process.
-
-During startup, a script that reads out the passphrase from the *EFI variable*
-is used to pass it to `sigsum-agent` by way of Bash Process Substitution,
-something like: `sigsum-agent -k /key/file -p <(passphrase-reader)`.
+The tools will make available locally the encrypted private key, and the
+passphrase.  These are to be stored on two other, separate backup sites.
 
 
 ## Backup considerations
 
 To allow for recovering from failures, while at the same time raising the bar
 for what an attacker must compromise in order to get hold of a decrypted private
-key, the private key file will be encrypted using two different passphrases.
-The items will be stored in the following way, for use during operation, and for
-backup:
+key, the private key file will be encrypted using a passphrase.  The items will
+be stored in the following way, for use during operation, and for backup:
 
 ```
 <location>: <item>
-livesystem-EFI-variable: passphrase1
-livesystem-disk: privkey(passphrase1)
-backupsite1: passphrase2
-backupsite2: privkey(passphrase2)
-provisioning-ansible: NO privkeys, NO passphrases
+livesystem-disk: passphrase
+livesystem-disk: private key
+backupsite1: passphrase
+backupsite2: private key
+provisioning-ansible: NO private keys, NO passphrases
 ```
 
-We avoid dealing with the additional complications of storing the private key in
-source code repo.  Like using Ansible's vault-encryption, or not; which
-passphrase the private key kept there is encrypted with, etc.
-
-Instead we focus on making it smooth to provision the livesystem with
-passphrase1 and privkey(passphrase1), and getting also an additional
-privkey(passphrase2) for storing at backupsite1, and the passphrase2 at
-backupsite2.
-
-It also lets us recover if one, but no more, of the following sites burning
-down: livesystem, backupsite1, and backupsite2.  Attacker must compromise both
-two backup sites, or get root and fully own livesystem (able to read both
-EFI-variables and disk).  Attacker that gets hold of the livesystem-disk and
-also compromises 1 of the backup sites can still not access the private key.
+This lets us recover if one, but no more, of the following sites burning down:
+livesystem, backupsite1, and backupsite2.  Attacker must compromise both two
+backup sites, or get root and fully own livesystem.
 
 
 ## Provisioning procedure
@@ -161,39 +124,36 @@ also compromises 1 of the backup sites can still not access the private key.
  - 1x local provisioning machine
  - 1x TKey, dedicated for softkey generation
  - ssh access over Wireguard+PSK tunnel to target machine, live-system
- - 2x USB sticks for backup
+ - 2x USB sticks for backup, or only 1, if passphrase kept using pen on paper
  - Tamper-evident bags
  - 2x physically secure locations for USB sticks for backup
 
 The script in [../scripts/provision-softkey](../scripts/provision-softkey)
 carries out generation and provisioning.
-TODO: still some TODOs in the script itself.
 
-Overall, TKey is used locally to generated passphrases and entropy for the
-private key seed.  This secret material is provided to the remote target machine
-over ssh.  The `passphrase1` is stored as an EFI variable on the target machine.
+Overall, TKey is used locally to generate passphrase and entropy for the private
+key seed.  This secret material is provided to the remote target machine over
+ssh.
 
 Our `genkey-mlsda44` tool is run on the target machine and creates the private
 key by mixing entropy from TKey with entropy from the target machine itself.
-The private key is encrypted with `passphrase1` (now called
-`privkey(passphrase1)`, and written to a location on target machine's disk.
+The private key is encrypted with using the passphrase, and both written to a
+location on target machine's disk.
 
-Then `genkey-mldsa44` is invoked again over ssh, running on the target machine
-and, having access to `passphrase1`, re-encrypts `privkey(passphrase1)` using
-`passphrase2`.  The new `privkey(passphrase2)` and `passphrase2` are written to
-an ephemeral location (in `/dev/shm/`) on the local machine.
+The new private key and passphrase are delivered to the local machine, written
+to ephemeral locations, in `/dev/shm/`.
 
 See the script itself for further details.
 
-After successfully running the provisioning script, the output
-`privkey(passphrase2)` and `passphrase2` shall be stored on 2 separate USB
-sticks (one file on each).  The USB sticks are each kept in a tamper-evident
-bags, and stored at separate backup locations.
+After successfully running the provisioning script, the output private key and
+passphrase shall be stored on 2 separate USB sticks (one file on each).  The USB
+sticks are each kept in a tamper-evident bags, and stored at separate backup
+locations.
 
-The `passphrase2` may alternatively be kept written down using pen on paper.
-
-The TKey used shall be stored together with the provisioning machine.
-
+The TKey used shall be stored together with the provisioning machine.  This is
+helpful if ever some vulnerability is discovered in the TKey that could affect
+us -- we then know exactly which one (version, variant) we used, and that it is
+kept in a secure location.
 
 ## Considerations
 

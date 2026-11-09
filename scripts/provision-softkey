@@ -8,23 +8,22 @@ say() {
 }
 
 target="${1?Give me target host that we can ssh to}"
-# TODO should we have a final specific location, or take as argument?
 targetkeyf=/etc/sigsum-agent/mldsa.key
-# TODO should we parametrize the name of the EFI-variable in ./efivarpass ?
+targetkeypassf=/etc/sigsum-agent/keypassfile
 
-localkeyf=/dev/shm/mldsa-pass2.key
-localpassf=/dev/shm/pass2
+localkeyf=/dev/shm/mldsa.key
+localpassf=/dev/shm/pass
 
 printf "Building tools ...\n"
 go build -o . ./cmd/genkey-mldsa44 ./cmd/sigsum-agent
 GOBIN=$PWD go install github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main
 printf "\n"
 
-printf "After running this script, the generated key and passphrases will be stored as follows:\n"
-printf "privkey(pass1) on %s in %s\n" "$target" "$targetkeyf"
-printf "pass1          on %s in EFI-variable\n" "$target"
-printf "privkey(pass2) on localhost in %s\n" "$localkeyf"
-printf "pass2          on localhost in %s\n" "$localpassf"
+printf "After running this script, the generated key and passphrase will be stored as follows:\n"
+printf "privatekey on %s in %s\n" "$target" "$targetkeyf"
+printf "passphrase on %s in %s\n" "$target" "$targetkeypassf"
+printf "privatekey on local machine in %s\n" "$localkeyf"
+printf "passphrase on local machine in %s\n" "$localpassf"
 printf "\n"
 printf "First of all, local TKey will be used to generate entropy.\n"
 printf "Provisioning will then continue over ssh to %s.\n" "$target"
@@ -32,7 +31,7 @@ printf "Hit RETURN to start\n"
 read -r
 
 errf=/tmp/provision-tkey-stderr
-for varsize in pass1:16 pass2:16 tkeyentropy:32; do
+for varsize in pass:16 tkeyentropy:32; do
   var=${varsize%:*}
   size=${varsize#*:}
   say "Using TKey TRNG to generate $size bytes for $var"
@@ -45,16 +44,15 @@ done
 rm -f "$errf"
 
 printf "Copying tools to %s ...\n" "$target"
-scp -q -p genkey-mldsa44 sigsum-agent ./scripts/efivarpass ./scripts/target-genkey \
+scp -q -p genkey-mldsa44 sigsum-agent ./scripts/target-genkey \
     "$target":/tmp/
 
 # Explicitly failing if a variable set using 'printf -v' is unset.
 # shellcheck disable=SC2029  # Yes, expanding on client side
-ssh "$target" sudo /tmp/target-genkey "$target" "${pass1:?}" "${pass2:?}" "${tkeyentropy:?}" "$targetkeyf" \
+ssh "$target" sudo /tmp/target-genkey "$target" "${pass:?}" "${tkeyentropy:?}" "$targetkeyf" "$targetkeypassf" \
     >"$localkeyf"
-say "Wrote privkey(pass2) to $localkeyf"
-printf "%s" "$pass2" >"$localpassf"
-say "Wrote pass2 to $localpassf"
+say "Wrote privatekey to $localkeyf"
+printf "%s" "$pass" >"$localpassf"
+say "Wrote passphrase to $localpassf"
 
-./sigsum-agent -k "$localkeyf" -p <(printf "%s:%s" "$localkeyf" "$(cat "$localpassf")") true
-say "Successfully ran sigsum-agent to decrypt $localkeyf using $localpassf"
+say "Key SSH fingerprint: $(./genkey-mldsa44 -l "$localkeyf")"
