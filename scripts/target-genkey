@@ -1,0 +1,48 @@
+#!/bin/bash
+
+set -eu
+umask 077
+
+say() {
+  printf "\e[33m%s: %s\e[0m\n" "${target%%.*}" "$1" >/dev/stderr
+}
+
+target=$1; shift
+pass1=$1; shift
+pass2=$1; shift
+tkeyentropy=$1; shift
+targetkeyf=$1; shift
+if (( $# > 0 )); then
+  say "unexpected positional argument: $*"
+  exit 2
+fi
+
+if [[ -e "$targetkeyf" ]]; then
+  say "File $targetkeyf exists"
+  exit 1
+fi
+
+mkdir -p "$(dirname "$targetkeyf")"
+
+printf "%s" "$pass1" | /tmp/efivarpass write
+say "Wrote pass1 to EFI-variable"
+
+say "Creating private key from mixed TKey and local entropy, encrypted with pass1 ..."
+/tmp/genkey-mldsa44 -t mldsa44 \
+                    --seed <(basenc --base16 -d <<<"$tkeyentropy") \
+                    --mix \
+                    -N "$(/tmp/efivarpass read)" \
+                    -o "$targetkeyf" \
+                    >/dev/null
+say "Wrote privkey(pass1) to $targetkeyf"
+
+/tmp/sigsum-agent -k "$targetkeyf" \
+                  -p <(printf "%s:%s" "$targetkeyf" "$(/tmp/efivarpass read)") \
+                  true
+say "Successfully ran sigsum-agent to decrypt $targetkeyf using pass1 from EFI-variable"
+
+say "Re-encrypting private key with pass2 ..."
+/tmp/genkey-mldsa44 --reencrypt \
+                    -p <(printf "%s:%s" "$targetkeyf" "$(/tmp/efivarpass read)") \
+                    -N "$pass2" \
+                    "$targetkeyf"

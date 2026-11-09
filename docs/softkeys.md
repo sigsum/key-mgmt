@@ -87,8 +87,10 @@ remote live-system -- an attacker being "present" on any one of these two
 machines (either now, or in the future after having decrypted a dump of tunnel
 traffic) would have access to both key and passphrase.
 
-TODO: is ssh's PQ key exchange enough, or we require Wireguard with PSK?
-Like `ssh -v -o KexAlgorithms=mlkem768x25519-sha256 target`
+(If we have OpenSSH 10.6 everywhere, an option could be to use ssh's
+mlkem768x25519-sha256 for key-exchange, and ssh-mldsa44-ed25519 for host/user
+authentication, especially if we could have the latter in a hardware device; but
+we don't).
 
 ## Passphrase
 
@@ -164,8 +166,8 @@ also compromises 1 of the backup sites can still not access the private key.
  - 2x physically secure locations for USB sticks for backup
 
 The script in [../scripts/provision-softkey](../scripts/provision-softkey)
-carries out generation and provisioning. (TODO: the script itself is not yet
-entirely complete, or ready for use)
+carries out generation and provisioning.
+TODO: still some TODOs in the script itself.
 
 Overall, TKey is used locally to generated passphrases and entropy for the
 private key seed.  This secret material is provided to the remote target machine
@@ -179,7 +181,7 @@ The private key is encrypted with `passphrase1` (now called
 Then `genkey-mldsa44` is invoked again over ssh, running on the target machine
 and, having access to `passphrase1`, re-encrypts `privkey(passphrase1)` using
 `passphrase2`.  The new `privkey(passphrase2)` and `passphrase2` are written to
-an ephemeral (`/dev/shm`) location on the local machine.
+an ephemeral location (in `/dev/shm/`) on the local machine.
 
 See the script itself for further details.
 

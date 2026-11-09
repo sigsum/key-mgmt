@@ -1,67 +1,60 @@
 #!/bin/bash
 
 set -eu
+umask 077
 
-target="${1?Give me target host that we can ssh to}"
-# TODO we can have a final generic location, or configurable?
-keyf=/tmp/mldsa.key
-# TODO can we store this in EFI var already, configurable name? but
-# the need to be root? This also needs to be read out further down.
-pass1f=/dev/shm/pass1
-
-key2f=/dev/shm/mldsa-pass2.key
-pass2f=/dev/shm/pass2
-
-printf "Local TKey will be used to generated entropy.\n"
-printf "After running this script, the generated key and passphrases will be stored as follows:\n"
-printf "privkey(passphrase1) on %s in %s\n" "$target" "$keyf"
-printf "         passphrase1 on %s in %s\n" "$target" "$pass1f"
-printf "privkey(passphrase2) on localhost in %s\n" "$key2f"
-printf "         passphrase2 on localhost in %s\n" "$pass2f"
-printf "Hit RETURN to continue\n"
-read
-saylocal() {
+say() {
   printf "\e[36mlocal: %s\e[0m\n" "$1"
 }
-saytarget() {
-  printf "\e[33m%s: %s\e[0m\n" "$target" "$1"
-}
 
-printf "Building ...\n"
-go build -o . ./cmd/genkey-mldsa44
+target="${1?Give me target host that we can ssh to}"
+# TODO should we have a final specific location, or take as argument?
+targetkeyf=/etc/sigsum-agent/mldsa.key
+# TODO should we parametrize the name of the EFI-variable in ./efivarpass ?
+
+localkeyf=/dev/shm/mldsa-pass2.key
+localpassf=/dev/shm/pass2
+
+printf "Building tools ...\n"
+go build -o . ./cmd/genkey-mldsa44 ./cmd/sigsum-agent
+GOBIN=$PWD go install github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main
+printf "\n"
+
+printf "After running this script, the generated key and passphrases will be stored as follows:\n"
+printf "privkey(pass1) on %s in %s\n" "$target" "$targetkeyf"
+printf "pass1          on %s in EFI-variable\n" "$target"
+printf "privkey(pass2) on localhost in %s\n" "$localkeyf"
+printf "pass2          on localhost in %s\n" "$localpassf"
+printf "\n"
+printf "First of all, local TKey will be used to generate entropy.\n"
+printf "Provisioning will then continue over ssh to %s.\n" "$target"
+printf "Hit RETURN to start\n"
+read -r
+
+errf=/tmp/provision-tkey-stderr
+for varsize in pass1:16 pass2:16 tkeyentropy:32; do
+  var=${varsize%:*}
+  size=${varsize#*:}
+  say "Using TKey TRNG to generate $size bytes for $var"
+  if ! value=$(./tkey-random-generator generate "$size" 2>"$errf"); then
+    cat "$errf" >/dev/stderr
+    exit 1
+  fi
+  printf -v "$var" "%s" "$value"
+done
+rm -f "$errf"
+
 printf "Copying tools to %s ...\n" "$target"
-scp -qp genkey-mldsa44 "$target":
+scp -q -p genkey-mldsa44 sigsum-agent ./scripts/efivarpass ./scripts/target-genkey \
+    "$target":/tmp/
 
-errf=/dev/shm/provision-stderr
+# Explicitly failing if a variable set using 'printf -v' is unset.
+# shellcheck disable=SC2029  # Yes, expanding on client side
+ssh "$target" sudo /tmp/target-genkey "$target" "${pass1:?}" "${pass2:?}" "${tkeyentropy:?}" "$targetkeyf" \
+    >"$localkeyf"
+say "Wrote privkey(pass2) to $localkeyf"
+printf "%s" "$pass2" >"$localpassf"
+say "Wrote pass2 to $localpassf"
 
-saylocal "using TKey to generate passphrase1 (32 hexdigits)"
-if ! pass1=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>"$errf"); then
-  cat "$errf" >/dev/stderr
-  exit 1
-fi
-printf "%s" "$pass1" \
-  | ssh "$target" "cat >$pass1f"
-saytarget "stored passphrase1 in: $pass1f"
-
-saylocal "using TKey to generate private key seed (16 bytes)"
-if ! seed=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>"$errf"); then
-  cat "$errf" >/dev/stderr
-  exit 1
-fi
-saytarget "creating key encrypted with passphrase1"
-printf "%s" "$seed" \
-  | basenc --base16 -d \
-  | ssh "$target" ./genkey-mldsa44 -t mldsa44 --seed - --mix -N '$(' cat "$pass1f" ')' -o "$keyf"
-saytarget "stored key (passphrase1) in: $keyf"
-
-saylocal "using TKey to generate passphrase2 (32 hexdigits)"
-if ! pass2=$(go run github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main generate 32 2>"$errf"); then
-  cat "$errf" >/dev/stderr
-  exit 1
-fi
-saytarget "re-encrypting private key with passphrase2"
-# Quoting the process and command substitution, so they are run on target
-ssh "$target" ./genkey-mldsa44 --reencrypt -p '<(' printf "$keyf:%s" '$(' cat "$pass1f" ')' ')' -N "$pass2" "$keyf" >"$key2f"
-saylocal "stored key (passphrase2) in: $key2f"
-printf "%s" "$pass2" >"$pass2f"
-saylocal "stored passphrase2 in: $pass2f"
+./sigsum-agent -k "$localkeyf" -p <(printf "%s:%s" "$localkeyf" "$(cat "$localpassf")") true
+say "Successfully ran sigsum-agent to decrypt $localkeyf using $localpassf"

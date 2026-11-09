@@ -17,3 +17,6 @@ check:
 	./tests/privkey-encryption-test
 	./tests/genkey-seed-test
 	./tests/genkey-reencrypt-test
+
+shellcheck:
+	shellcheck ./scripts/target-genkey ./scripts/provision-softkey ./scripts/efivarpass
