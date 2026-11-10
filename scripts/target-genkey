@@ -1,0 +1,48 @@
+#!/bin/bash
+
+set -eu
+umask 077
+
+say() {
+  printf "\e[33m%s: %s\e[0m\n" "${target%%.*}" "$1" >/dev/stderr
+}
+
+target=$1; shift
+pass=$1; shift
+tkeyentropy=$1; shift
+targetkeyf=$1; shift
+targetkeypassf=$1; shift
+if (( $# > 0 )); then
+  say "unexpected positional argument: $*"
+  exit 2
+fi
+
+if [[ -e "$targetkeyf" ]]; then
+  say "File $targetkeyf exists"
+  exit 1
+fi
+
+mkdir -p "$(dirname "$targetkeyf")"
+
+say "Creating privatekey by mixing entropy from TKey and local system, encrypted with passphrase ..."
+/tmp/genkey-mldsa44 -t mldsa44 \
+                    --seed <(basenc --base16 -d <<<"$tkeyentropy") \
+                    --mix \
+                    -N "$pass" \
+                    -o "$targetkeyf" \
+                    >/dev/null
+say "Wrote privatekey to $targetkeyf"
+
+if [[ -e "$targetkeypassf" ]] && grep -q "^$targetkeyf:" "$targetkeypassf"; then
+  sed -i "s,^$targetkeyf:.*,$targetkeyf:$pass," "$targetkeypassf"
+else
+  printf "%s:%s\n" "$targetkeyf" "$pass" >>"$targetkeypassf"
+fi
+say "Wrote passphrase for $targetkeyf into in $targetkeypassf"
+
+/tmp/sigsum-agent -k "$targetkeyf" -p "$targetkeypassf" true
+say "Successfully ran sigsum-agent to decrypt $targetkeyf"
+
+say "Key SSH fingerprint: $(/tmp/genkey-mldsa44 -l "$targetkeyf")"
+
+cat "$targetkeyf"
