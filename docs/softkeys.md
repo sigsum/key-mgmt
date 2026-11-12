@@ -150,7 +150,7 @@ passphrase shall be stored on 2 separate USB sticks (one file on each).  The USB
 sticks are each kept in a tamper-evident bags, and stored at separate backup
 locations.
 
-The TKey used shall be stored together with the provisioning machine.  This is
+The TKey used shall be stored in one of the backup locations.  This is
 helpful if ever some vulnerability is discovered in the TKey that could affect
 us -- we then know exactly which one (version, variant) we used, and that it is
 kept in a secure location.
