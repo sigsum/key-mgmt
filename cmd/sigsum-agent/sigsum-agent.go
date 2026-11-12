@@ -135,13 +135,13 @@ stdout, they are written as one line each, pid first.
 	}
 
 	if keyId >= 0 && len(hsmPassFile) == 0 {
-		return 0, fmt.Errorf("the --hsm-passphrase-file option is required with --key-id")
+		return 0, fmt.Errorf("the -a (--hsm-passphrase-file) option is required with -i (--key-id)")
 	}
 
 	newGetPassphraseFunc := ui.NewTerminalGetPassphrase
 	if set.IsSet('p') {
 		if len(keyFiles) == 0 {
-			return 0, fmt.Errorf("the --key-passphrase-file option must be used with one or more --key")
+			return 0, fmt.Errorf("the -p (--key-passphrase-file) option must be used with one or more -k (--key-file)")
 		}
 		r, err := os.Open(keyPassFile)
 		if err != nil {

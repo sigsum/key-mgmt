@@ -1,0 +1,58 @@
+#!/bin/bash
+
+set -eu
+umask 077
+
+say() {
+  printf "\e[36mlocal: %s\e[0m\n" "$1"
+}
+
+target="${1?Give me target host that we can ssh to}"
+targetkeyf=/etc/sigsum-agent/mldsa.key
+targetkeypassf=/etc/sigsum-agent/keypassfile
+
+localkeyf=/dev/shm/mldsa.key
+localpassf=/dev/shm/pass
+
+printf "Building tools ...\n"
+go build -o . ./cmd/genkey-mldsa44 ./cmd/sigsum-agent
+GOBIN=$PWD go install github.com/tillitis/tkey-random-generator/cmd/tkey-random-generator@main
+printf "\n"
+
+printf "After running this script, the generated key and passphrase will be stored as follows:\n"
+printf "privatekey on %s in %s\n" "$target" "$targetkeyf"
+printf "passphrase on %s in %s\n" "$target" "$targetkeypassf"
+printf "privatekey on local machine in %s\n" "$localkeyf"
+printf "passphrase on local machine in %s\n" "$localpassf"
+printf "\n"
+printf "First of all, local TKey will be used to generate entropy.\n"
+printf "Provisioning will then continue over ssh to %s.\n" "$target"
+printf "Hit RETURN to start\n"
+read -r
+
+errf=/tmp/provision-tkey-stderr
+for varsize in pass:16 tkeyentropy:32; do
+  var=${varsize%:*}
+  size=${varsize#*:}
+  say "Using TKey TRNG to generate $size bytes for $var"
+  if ! value=$(./tkey-random-generator generate "$size" 2>"$errf"); then
+    cat "$errf" >/dev/stderr
+    exit 1
+  fi
+  printf -v "$var" "%s" "$value"
+done
+rm -f "$errf"
+
+printf "Copying tools to %s ...\n" "$target"
+scp -q -p genkey-mldsa44 sigsum-agent ./scripts/target-genkey \
+    "$target":/tmp/
+
+# Explicitly failing if a variable set using 'printf -v' is unset.
+# shellcheck disable=SC2029  # Yes, expanding on client side
+ssh "$target" sudo /tmp/target-genkey "$target" "${pass:?}" "${tkeyentropy:?}" "$targetkeyf" "$targetkeypassf" \
+    >"$localkeyf"
+say "Wrote privatekey to $localkeyf"
+printf "%s" "$pass" >"$localpassf"
+say "Wrote passphrase to $localpassf"
+
+say "Key SSH fingerprint: $(./genkey-mldsa44 -l "$localkeyf")"
