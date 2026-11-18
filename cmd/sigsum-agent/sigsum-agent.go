@@ -202,7 +202,12 @@ stdout, they are written as one line each, pid first.
 		keys[sshKey] = sshSign
 	}
 	if keyId > 0 {
-		sshKey, sshSign, n, err := sshFromMultiEd25519HSM(hsmPassFile, keyId, retry)
+		sshKey, sshSign, n, cleanupHSM, err := sshFromMultiEd25519HSM(hsmPassFile, keyId, retry)
+		defer func() {
+			if cleanupHSM != nil {
+				cleanupHSM()
+			}
+		}()
 		if err != nil {
 			return 0, err
 		}
@@ -306,13 +311,13 @@ func sshFromFile(keyFile string, newGetPassphraseFunc func(string) agent.GetPass
 	}
 }
 
-func sshFromMultiEd25519HSM(hsmPassFile string, keyId int, retry bool) (string, agent.SSHSign, int, error) {
+func sshFromMultiEd25519HSM(hsmPassFile string, keyId int, retry bool) (string, agent.SSHSign, int, func(), error) {
 	if keyId < 0 || keyId >= 0x10000 {
-		return "", nil, 0, fmt.Errorf("key id %d out of range", keyId)
+		return "", nil, 0, nil, fmt.Errorf("key id %d out of range", keyId)
 	}
 	f, err := os.Open(hsmPassFile)
 	if err != nil {
-		return "", nil, 0, err
+		return "", nil, 0, nil, err
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
@@ -329,33 +334,38 @@ func sshFromMultiEd25519HSM(hsmPassFile string, keyId int, retry bool) (string, 
 		colon1 := strings.Index(line, ":")
 		colon2 := strings.Index(line[colon1+1:], ":")
 		if colon1 < 0 || colon2 < 0 {
-			return "", nil, 0, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", n, hsmPassFile)
+			return "", nil, 0, nil, fmt.Errorf("Unexpected format of line %v in file %q: expected two colons", n, hsmPassFile)
 		}
 		port := line[0:colon1]
 		authId, err := strconv.ParseUint(line[colon1+1:colon1+1+colon2], 10, 16)
 		if err != nil {
-			return "", nil, 0, fmt.Errorf("Invalid auth id in file %q: %v", hsmPassFile, err)
+			return "", nil, 0, nil, fmt.Errorf("Invalid auth id in file %q: %v", hsmPassFile, err)
 		}
 		authPassword := line[colon1+colon2+2:]
 		connector := "localhost:" + port
 		hsmSigner, err := openHSM(connector, uint16(authId), authPassword, uint16(keyId), retry)
 		if err != nil {
-			return "", nil, 0, fmt.Errorf("Error in openHSM when processing line %v in file %q: %v", n, hsmPassFile, err)
+			return "", nil, 0, nil, fmt.Errorf("Error in openHSM when processing line %v in file %q: %v", n, hsmPassFile, err)
 		}
 		hsmSigners = append(hsmSigners, hsmSigner)
 	}
+	cleanup := func() {
+		for i := range hsmSigners {
+			hsmSigners[i].Close()
+		}
+	}
 	if err := scanner.Err(); err != nil {
-		return "", nil, 0, err
+		return "", nil, 0, cleanup, err
 	}
 	multiHsmSigner, err := hsm.NewMultiYubiHSMSigner(hsmSigners)
 	if err != nil {
-		return "", nil, 0, fmt.Errorf("failed NewMultiYubiHSMSigner: %w", err)
+		return "", nil, 0, cleanup, fmt.Errorf("failed NewMultiYubiHSMSigner: %w", err)
 	}
 	sshKey, sshSign, err := agent.SSHFromEd25519(multiHsmSigner)
 	if err != nil {
-		return "", nil, 0, fmt.Errorf("internal error: %w", err)
+		return "", nil, 0, cleanup, fmt.Errorf("internal error: %w", err)
 	}
-	return sshKey, sshSign, n, nil
+	return sshKey, sshSign, n, cleanup, nil
 }
 
 // We need the connector to be up and running, to initialize and
